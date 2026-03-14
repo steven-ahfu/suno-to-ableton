@@ -7,8 +7,9 @@ Contributions are welcome! This guide covers how to set up a development environ
 ### 1. Fork and clone
 
 ```bash
-git clone https://github.com/<your-username>/suno-ableton-preprocessor.git
-cd suno-ableton-preprocessor
+# From your fork:
+git clone https://github.com/<your-username>/suno-to-ableton.git
+cd suno-to-ableton
 ```
 
 ### 2. Development install
@@ -25,13 +26,13 @@ pip install -e '.[tui,separation]'
 ### 3. Verify
 
 ```bash
-suno-ableton-preprocessor --help
+suno-to-ableton --help
 ```
 
 ## Project structure
 
 ```
-suno_ableton_preprocessor/
+suno_to_ableton/
 ├── cli.py                  # Typer CLI entry point and subcommands
 ├── pipeline.py             # Main processing pipeline orchestration
 ├── discovery.py            # Stem/MIDI file discovery and naming
@@ -101,7 +102,7 @@ Open an issue describing:
 
 ### Adding a new advanced feature
 
-Advanced features live in `suno_ableton_preprocessor/features/`. To add one:
+Advanced features live in `suno_to_ableton/features/`. To add one:
 
 1. Create a new module in `features/` following the pattern of existing ones
 2. Add the CLI flag in `cli.py`
@@ -124,4 +125,4 @@ When adding or changing features, update the relevant docs.
 
 ## License
 
-By contributing, you agree that your contributions will be licensed under the same license as the project. See [LICENSE](https://github.com/steven-ahfu/suno-ableton-preprocessor/blob/main/LICENSE).
+By contributing, you agree that your contributions will be licensed under the same license as the project. See [LICENSE](https://github.com/steven-ahfu/suno-to-ableton/blob/main/LICENSE).

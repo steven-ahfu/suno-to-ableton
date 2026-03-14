@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0e1118"/>
+      <stop offset="100%" stop-color="#141820"/>
+    </linearGradient>
+    <filter id="cglow" x="-80%" y="-80%" width="260%" height="260%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="8" result="blur"/>
+      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+    </filter>
+    <filter id="mglow" x="-80%" y="-80%" width="260%" height="260%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="8" result="blur"/>
+      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="512" height="512" rx="80" fill="url(#bg)"/>
+
+  <!-- Vertical rail — thicker now (was ~4-6, now 8) -->
+  <line x1="100" y1="80" x2="100" y2="432" stroke="#1d2638" stroke-width="8" stroke-linecap="round"/>
+
+  <!-- Top dot (cyan) — Suno/stems -->
+  <circle cx="100" cy="120" r="22" fill="#00e5c8" filter="url(#cglow)"/>
+
+  <!-- Middle dot (neutral) -->
+  <circle cx="100" cy="256" r="16" fill="#c8d0e0" opacity="0.5"/>
+
+  <!-- Bottom dot (magenta) — Ableton -->
+  <circle cx="100" cy="392" r="22" fill="#e040a0" filter="url(#mglow)"/>
+
+  <!-- Top horizontal arrow (cyan) — thicker stroke (was ~6-8, now 12) -->
+  <line x1="130" y1="120" x2="210" y2="120" stroke="#00e5c8" stroke-width="12" stroke-linecap="round"/>
+  <polygon points="204,102 232,120 204,138" fill="#00e5c8"/>
+
+  <!-- Top waveform bars (cyan) -->
+  <rect x="248" y="88"  width="24" height="64" rx="9" fill="#00e5c8"/>
+  <rect x="282" y="100" width="24" height="40" rx="9" fill="#00e5c8"/>
+  <rect x="316" y="92"  width="24" height="56" rx="9" fill="#00e5c8"/>
+  <rect x="350" y="104" width="24" height="32" rx="9" fill="#00e5c8"/>
+
+  <!-- Bottom horizontal arrow (magenta) — thicker stroke -->
+  <line x1="130" y1="392" x2="210" y2="392" stroke="#e040a0" stroke-width="12" stroke-linecap="round"/>
+  <polygon points="204,374 232,392 204,410" fill="#e040a0"/>
+
+  <!-- Bottom waveform bars (magenta) -->
+  <rect x="248" y="364" width="24" height="56" rx="9" fill="#e040a0"/>
+  <rect x="282" y="372" width="24" height="40" rx="9" fill="#e040a0"/>
+  <rect x="316" y="368" width="24" height="48" rx="9" fill="#e040a0"/>
+  <rect x="350" y="378" width="24" height="28" rx="9" fill="#e040a0"/>
+
+  <!-- Logo text — bigger (was ~28-32, now 42) -->
+  <text x="256" y="270" text-anchor="middle" font-family="'SF Pro Display', 'Segoe UI', system-ui, -apple-system, sans-serif" font-size="42" font-weight="700" fill="#e8ecf4" letter-spacing="3">S → A</text>
+</svg>

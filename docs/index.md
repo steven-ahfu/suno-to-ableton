@@ -1,56 +1,38 @@
-# Suno Ableton Preprocessor
+# Suno to Ableton
 
-Suno AI export preprocessor for Ableton Live. Takes Suno's numbered WAV stems and MIDI export and produces grid-aligned, normalized files ready for an Ableton Live session.
+![Suno to Ableton](assets/suno-to-ableton-header.png)
+
+Turn your Suno AI songs into production-ready Ableton Live sessions. Export stems and MIDI from [suno.ai](https://suno.ai), run one command, and open a fully laid-out `.als` file — every track named, grid-aligned, tempo-matched, and ready to remix.
 
 ## What it does
 
-### Automatic (runs by default)
+Automates all the tedious work between exporting from Suno and actually producing in Ableton:
 
-1. **Discovery** — finds and identifies numbered WAV stems and MIDI files
-2. **Naming** — maps Suno's numbered filenames to stem roles (Drums, Bass, Vocals, etc.)
-3. **Sample-rate conversion** — resamples all audio to 48kHz stereo WAV
-4. **Silence trim** — removes leading silence so clips start cleanly
-5. **BPM estimation** — beat-tracks the drums/percussion stem with librosa
-6. **Global offset alignment** — computes downbeat offset so every clip lands on the Ableton grid
-7. **Conservative MIDI cleanup** — removes empty tracks, short/duplicate notes, quantizes to grid, sets tempo
-8. **Manifest + reports** — writes `manifest.json`, `bpm_report.json`, and `timing_report.json`
-
-### Advanced (opt-in)
-
-These require explicit flags — they never run unless you ask for them. Each has a detailed doc explaining what decisions it makes and when to use it.
-
-- **[Stem quality judgment](features/stem-quality-judgment.md)** (`--choose-stems`) — compares original vs AI-generated stems and recommends the better version
-- **[Grid anchor / bar-1 detection](features/grid-anchor.md)** (`--choose-grid-anchor`) — analyzes grid anchor candidates when the intro downbeat is unclear
-- **[Section detection](features/section-detection.md)** (`--detect-sections`) — identifies arrangement sections (intro, verse, chorus, etc.)
-- **[Harmonic MIDI repair](features/harmonic-midi-repair.md)** (`--repair-midi`) — detects key, flags out-of-key notes, fixes stacked chords
-- **[MIDI requantization](features/requantization.md)** (`--requantize-midi`) — re-snaps notes to grid while preserving feel
-- **[Separation strategy](features/separation-strategy.md)** (`--reseparate`, `--separate-missing`) — AI stem separation with Demucs or UVR
-- **[ALS export](als-export.md)** (experimental) (`--export-als`) — generates an Ableton Live Set with stems placed on matching tracks
+- **Stem cleanup** — renames, normalizes, trims silence, and routes each stem to the correct track
+- **Tempo and grid alignment** — detects BPM, aligns the first downbeat, and snaps everything to the grid
+- **MIDI cleanup** — strips junk notes, fixes quantization, and sets the correct tempo
+- **Arrangement detection** — identifies song sections like intro, verse, chorus, and bridge
+- **Stem comparison** — evaluates stem quality and picks the cleanest version when alternatives exist
+- **Key and harmony correction** — detects the key and fixes wrong notes in MIDI
+- **`.als` export** — generates an Ableton Live Set ready to open and produce
 
 ## Quick start
 
 ```bash
 # 1. Install prerequisites (Python 3.11+, ffmpeg) — see Installation page
 # 2. Clone and install
-git clone https://github.com/steven-ahfu/suno-ableton-preprocessor.git
-cd suno-ableton-preprocessor
+git clone https://github.com/steven-ahfu/suno-to-ableton.git
+cd suno-to-ableton
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e .
 
 # 3. Export stems from Suno, unzip into a directory
 
 # 4. Process
-suno-ableton-preprocessor process ~/suno-exports/my-song --export-als
+suno-to-ableton process ~/suno-exports/my-song --export-als
 
 # 5. Open processed/Song.als in Ableton Live
 ```
-
-## Next steps
-
-- **[Installation](install.md)** — prerequisites, platform-specific install commands, optional extras
-- **[Exporting from Suno](suno-export.md)** — how to get your stems and MIDI out of Suno
-- **[CLI Usage](usage-cli.md)** — all commands and what they do
-- **[Workflow Examples](workflows.md)** — common recipes for different use cases
 
 ## Acknowledgments
 
@@ -58,4 +40,4 @@ suno-ableton-preprocessor process ~/suno-exports/my-song --export-als
 
 ## License
 
-See [LICENSE](https://github.com/steven-ahfu/suno-ableton-preprocessor/blob/main/LICENSE).
+See [LICENSE](https://github.com/steven-ahfu/suno-to-ableton/blob/main/LICENSE).

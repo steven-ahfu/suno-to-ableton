@@ -19,10 +19,10 @@ All advanced features support **preview mode** by default — they analyze and p
 
 ```bash
 # Preview: prints analysis only
-suno-ableton-preprocessor repair-midi /path/to/my-song
+suno-to-ableton repair-midi /path/to/my-song
 
 # Apply: writes corrected MIDI files
-suno-ableton-preprocessor repair-midi /path/to/my-song --apply
+suno-to-ableton repair-midi /path/to/my-song --apply
 ```
 
 ## Using with the pipeline
@@ -30,7 +30,7 @@ suno-ableton-preprocessor repair-midi /path/to/my-song --apply
 Advanced features can be enabled during a full processing run:
 
 ```bash
-suno-ableton-preprocessor process /path/to/my-song \
+suno-to-ableton process /path/to/my-song \
   --detect-sections \
   --repair-midi \
   --apply
@@ -39,6 +39,6 @@ suno-ableton-preprocessor process /path/to/my-song \
 Or run standalone after processing:
 
 ```bash
-suno-ableton-preprocessor detect-sections /path/to/my-song
-suno-ableton-preprocessor repair-midi /path/to/my-song --apply
+suno-to-ableton detect-sections /path/to/my-song
+suno-to-ableton repair-midi /path/to/my-song --apply
 ```

@@ -28,7 +28,7 @@ The `processed/reports/` directory contains:
 Use the `report` subcommand to view an existing manifest in a formatted table:
 
 ```bash
-suno-ableton-preprocessor report /path/to/my-song
+suno-to-ableton report /path/to/my-song
 ```
 
 ## manifest.json

@@ -21,10 +21,10 @@ Suno's MIDI export is a transcription, not the original sequence — it contains
 
 ```bash
 # Analyze without modifying
-suno-ableton-preprocessor repair-midi /path/to/my-song
+suno-to-ableton repair-midi /path/to/my-song
 
 # Fix and write corrected MIDI
-suno-ableton-preprocessor repair-midi /path/to/my-song --apply
+suno-to-ableton repair-midi /path/to/my-song --apply
 ```
 
 ## What `--apply` does

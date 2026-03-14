@@ -1,4 +1,4 @@
-"""Runtime configuration for suno-ableton-preprocessor."""
+"""Runtime configuration for suno-to-ableton."""
 
 from __future__ import annotations
 

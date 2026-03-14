@@ -31,19 +31,19 @@ The bundled template has pre-configured tracks:
 ### During processing
 
 ```bash
-suno-ableton-preprocessor process /path/to/my-song --export-als
+suno-to-ableton process /path/to/my-song --export-als
 ```
 
 ### From already-processed output
 
 ```bash
-suno-ableton-preprocessor export-als /path/to/my-song
+suno-to-ableton export-als /path/to/my-song
 ```
 
 ### With a custom template
 
 ```bash
-suno-ableton-preprocessor process /path/to/my-song --export-als --als-template /path/to/MyTemplate.als
+suno-to-ableton process /path/to/my-song --export-als --als-template /path/to/MyTemplate.als
 ```
 
 ## Output

@@ -20,10 +20,10 @@ Suno exports numbered stems, but their quality varies — some have audible blee
 
 ```bash
 # Generate AI stems, then compare
-suno-ableton-preprocessor process /path/to/my-song --separate-missing --choose-stems --apply
+suno-to-ableton process /path/to/my-song --separate-missing --choose-stems --apply
 
 # Or standalone after processing
-suno-ableton-preprocessor choose-stems /path/to/my-song --apply
+suno-to-ableton choose-stems /path/to/my-song --apply
 ```
 
 ## What `--apply` does

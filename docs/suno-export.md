@@ -4,7 +4,7 @@ Before using this tool, you need to export your song from Suno with stems and (o
 
 ## How to export
 
-1. Open your song on [suno.com](https://suno.com)
+1. Open your song on [suno.ai](https://suno.ai)
 2. Click the **download** button and select **Stems** — this downloads a ZIP containing individually numbered WAV files for each instrument
 3. If available, download the **MIDI** file for the same song (Suno Studio can export MIDI derived from stems — useful for recreating melodies or drum patterns with your own instruments)
 4. Create a project directory and unzip/move all files into it:

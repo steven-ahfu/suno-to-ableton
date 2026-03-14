@@ -5,7 +5,7 @@ Common recipes for different use cases.
 ## Minimal — just get stems into Ableton
 
 ```bash
-suno-ableton-preprocessor process ~/suno-exports/my-song --export-als
+suno-to-ableton process ~/suno-exports/my-song --export-als
 # Open processed/Song.als in Ableton
 ```
 
@@ -13,13 +13,13 @@ suno-ableton-preprocessor process ~/suno-exports/my-song --export-als
 
 ```bash
 # 1. Read-only scan — see BPM, stem inventory, alignment info
-suno-ableton-preprocessor analyze ~/suno-exports/my-song
+suno-to-ableton analyze ~/suno-exports/my-song
 
 # 2. Dry run — see what processing would do without writing files
-suno-ableton-preprocessor process ~/suno-exports/my-song --dry-run
+suno-to-ableton process ~/suno-exports/my-song --dry-run
 
 # 3. Process for real
-suno-ableton-preprocessor process ~/suno-exports/my-song --export-als
+suno-to-ableton process ~/suno-exports/my-song --export-als
 ```
 
 ## Fix bad stems
@@ -27,7 +27,7 @@ suno-ableton-preprocessor process ~/suno-exports/my-song --export-als
 When Suno's stems have bleed or quality issues, generate AI alternatives and auto-pick the better version:
 
 ```bash
-suno-ableton-preprocessor process ~/suno-exports/my-song \
+suno-to-ableton process ~/suno-exports/my-song \
   --separate-missing \
   --choose-stems \
   --apply \
@@ -41,7 +41,7 @@ See [Stem Quality Judgment](features/stem-quality-judgment.md) and [Separation S
 When you want to use Suno's MIDI with your own instruments but the transcription has wrong notes:
 
 ```bash
-suno-ableton-preprocessor process ~/suno-exports/my-song \
+suno-to-ableton process ~/suno-exports/my-song \
   --repair-midi \
   --requantize-midi --requantize-mode light \
   --apply \
@@ -55,7 +55,7 @@ See [Harmonic MIDI Repair](features/harmonic-midi-repair.md) and [MIDI Requantiz
 Run every advanced feature for maximum analysis and cleanup:
 
 ```bash
-suno-ableton-preprocessor process ~/suno-exports/my-song \
+suno-to-ableton process ~/suno-exports/my-song \
   --export-als \
   --detect-sections \
   --choose-grid-anchor \
@@ -72,13 +72,13 @@ Most advanced features support preview mode — analyze and print results withou
 
 ```bash
 # See what MIDI repair would fix
-suno-ableton-preprocessor repair-midi ~/suno-exports/my-song
+suno-to-ableton repair-midi ~/suno-exports/my-song
 
 # See which stems would be replaced
-suno-ableton-preprocessor choose-stems ~/suno-exports/my-song
+suno-to-ableton choose-stems ~/suno-exports/my-song
 
 # See detected sections
-suno-ableton-preprocessor detect-sections ~/suno-exports/my-song
+suno-to-ableton detect-sections ~/suno-exports/my-song
 ```
 
 ## Batch processing
@@ -88,6 +88,6 @@ Process multiple songs in sequence:
 ```bash
 for song in ~/suno-exports/*/; do
   echo "Processing: $song"
-  suno-ableton-preprocessor process "$song" --export-als
+  suno-to-ableton process "$song" --export-als
 done
 ```

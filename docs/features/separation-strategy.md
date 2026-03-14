@@ -24,13 +24,13 @@ Suno provides stems, but sometimes they're incomplete or low quality. AI stem se
 
 ```bash
 # Generate missing stems with Demucs
-suno-ableton-preprocessor process /path/to/my-song --separate-missing
+suno-to-ableton process /path/to/my-song --separate-missing
 
 # Re-run with UVR instead
-suno-ableton-preprocessor reseparate /path/to/my-song --separator uvr
+suno-to-ableton reseparate /path/to/my-song --separator uvr
 
 # Standalone separation
-suno-ableton-preprocessor separate /path/to/my-song --separator demucs
+suno-to-ableton separate /path/to/my-song --separator demucs
 ```
 
 ## Combining with stem quality judgment
@@ -38,7 +38,7 @@ suno-ableton-preprocessor separate /path/to/my-song --separator demucs
 Run `--choose-stems` after separation to automatically compare originals vs generated stems:
 
 ```bash
-suno-ableton-preprocessor process /path/to/my-song \
+suno-to-ableton process /path/to/my-song \
   --separate-missing \
   --choose-stems \
   --apply

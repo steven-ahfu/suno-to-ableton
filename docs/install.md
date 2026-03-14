@@ -71,8 +71,8 @@ python3 -m ensurepip --upgrade
 ## Step 4: Clone and install the preprocessor
 
 ```bash
-git clone https://github.com/steven-ahfu/suno-ableton-preprocessor.git
-cd suno-ableton-preprocessor
+git clone https://github.com/steven-ahfu/suno-to-ableton.git
+cd suno-to-ableton
 
 # Create a virtual environment (recommended)
 python3 -m venv .venv
@@ -147,7 +147,7 @@ pip install -e '.[separation-gpu]'
 
 ```bash
 # Should print usage info
-suno-ableton-preprocessor --help
+suno-to-ableton --help
 
 # Check ffmpeg
 ffmpeg -version
@@ -159,7 +159,7 @@ python3 -c "import torch; print(f'PyTorch {torch.__version__}, CUDA: {torch.cuda
 ## Updating
 
 ```bash
-cd suno-ableton-preprocessor
+cd suno-to-ableton
 git pull
 pip install -e .
 ```
@@ -167,7 +167,7 @@ pip install -e .
 ## Uninstalling
 
 ```bash
-pip uninstall suno-ableton-preprocessor
+pip uninstall suno-to-ableton
 ```
 
 ## Dependency reference

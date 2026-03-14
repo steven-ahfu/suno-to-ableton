@@ -20,10 +20,10 @@ Identifies structural sections in the song — intro, verse, pre-chorus, chorus,
 
 ```bash
 # Analyze sections
-suno-ableton-preprocessor detect-sections /path/to/my-song
+suno-to-ableton detect-sections /path/to/my-song
 
 # Include in full processing
-suno-ableton-preprocessor process /path/to/my-song --detect-sections
+suno-to-ableton process /path/to/my-song --detect-sections
 ```
 
 ## Output

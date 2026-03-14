@@ -1,4 +1,4 @@
-"""Typer CLI for suno-ableton-preprocessor."""
+"""Typer CLI for suno-to-ableton."""
 
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ from .reporting import (
 )
 
 app = typer.Typer(
-    name="suno-ableton-preprocessor",
+    name="suno-to-ableton",
     help="Suno AI export preprocessor for Ableton Live",
     no_args_is_help=True,
 )
@@ -219,7 +219,7 @@ def report(
 
     if not manifest_path.exists():
         console.print(f"[red]No manifest found at {manifest_path}[/red]")
-        console.print("Run 'suno-ableton-preprocessor process' first to generate a manifest.")
+        console.print("Run 'suno-to-ableton process' first to generate a manifest.")
         raise typer.Exit(1)
 
     with open(manifest_path) as f:
@@ -416,7 +416,7 @@ def export_als_cmd(
     # Load manifest
     manifest_path = config.reports_dir / "manifest.json"
     if not manifest_path.exists():
-        console.print("[red]No manifest found. Run 'suno-ableton-preprocessor process' first.[/red]")
+        console.print("[red]No manifest found. Run 'suno-to-ableton process' first.[/red]")
         raise typer.Exit(1)
 
     import json as json_mod

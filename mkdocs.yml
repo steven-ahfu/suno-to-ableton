@@ -1,11 +1,15 @@
-site_name: Suno Ableton Preprocessor
-site_description: Suno AI export preprocessor for Ableton Live
-repo_url: https://github.com/steven-ahfu/suno-ableton-preprocessor
+site_name: Suno to Ableton
+site_description: Turn your Suno AI songs into production-ready Ableton Live sessions
+repo_url: https://github.com/steven-ahfu/suno-to-ableton
 
 
 theme:
   name: material
-  favicon: https://github.githubassets.com/favicons/favicon.png
+  custom_dir: docs/overrides
+  favicon: assets/favicon.ico
+  logo: assets/logo-512.png
+  icon:
+    logo: material/music-note
   features:
     - navigation.tabs
     - navigation.sections
@@ -55,6 +59,10 @@ theme:
         icon: material/weather-cloudy
         name: Switch to Latte
 
+plugins:
+  - search
+  - glightbox
+
 extra_css:
   - stylesheets/extra.css
 
@@ -70,6 +78,7 @@ markdown_extensions:
       linenums: true
   - pymdownx.inlinehilite
   - pymdownx.snippets
+  - pymdownx.superfences
   - pymdownx.tabbed:
       alternate_style: true
   - attr_list

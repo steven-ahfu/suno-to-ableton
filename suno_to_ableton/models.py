@@ -1,4 +1,4 @@
-"""Data models for suno-ableton-preprocessor."""
+"""Data models for suno-to-ableton."""
 
 from __future__ import annotations
 

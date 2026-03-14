@@ -29,13 +29,13 @@ The automatic pipeline does basic grid quantization during MIDI cleanup. This fe
 
 ```bash
 # Light requantization
-suno-ableton-preprocessor requantize-midi /path/to/my-song --mode light --apply
+suno-to-ableton requantize-midi /path/to/my-song --mode light --apply
 
 # Add swing
-suno-ableton-preprocessor requantize-midi /path/to/my-song --mode swing --apply
+suno-to-ableton requantize-midi /path/to/my-song --mode swing --apply
 
 # During full processing
-suno-ableton-preprocessor process /path/to/my-song --requantize-midi --requantize-mode light --apply
+suno-to-ableton process /path/to/my-song --requantize-midi --requantize-mode light --apply
 ```
 
 ## What `--apply` does

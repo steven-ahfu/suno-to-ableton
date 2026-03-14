@@ -1,4 +1,4 @@
-"""Textual TUI for suno-ableton-preprocessor."""
+"""Textual TUI for suno-to-ableton."""
 
 from __future__ import annotations
 
@@ -50,8 +50,8 @@ class HelpFooter(VContainer):
         yield Static("", id="help-bar")
         yield Footer()
 
-import suno_ableton_preprocessor.pipeline as pipeline_module
-import suno_ableton_preprocessor.reporting as reporting_module
+import suno_to_ableton.pipeline as pipeline_module
+import suno_to_ableton.reporting as reporting_module
 from .config import SunoPrepConfig
 from .discovery import discover_project, scan_for_projects
 from .models import ProcessingManifest, ProjectInventory
@@ -169,7 +169,7 @@ TOOLTIPS: dict[str, str] = {
 class SunoPrepTUI(App):
     """Suno export preprocessor TUI."""
 
-    TITLE = "suno-ableton-preprocessor"
+    TITLE = "suno-to-ableton"
     SUB_TITLE = "Suno AI Export Preprocessor for Ableton Live"
 
     CSS = """

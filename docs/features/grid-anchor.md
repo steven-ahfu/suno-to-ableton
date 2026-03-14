@@ -26,10 +26,10 @@ Analyzes beat interval regularity (sliding-window std dev), onset positions rela
 
 ```bash
 # Analyze candidates
-suno-ableton-preprocessor choose-grid-anchor /path/to/my-song
+suno-to-ableton choose-grid-anchor /path/to/my-song
 
 # Apply the recommended anchor during processing
-suno-ableton-preprocessor process /path/to/my-song --choose-grid-anchor --apply
+suno-to-ableton process /path/to/my-song --choose-grid-anchor --apply
 ```
 
 ## What `--apply` does

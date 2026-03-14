@@ -13,10 +13,10 @@ pip install -e '.[tui]'
 ## Launch
 
 ```bash
-suno-ableton-preprocessor tui
+suno-to-ableton tui
 ```
 
-<img src="tui.png" alt="TUI screenshot" width="800">
+![TUI screenshot](assets/tui.png){ width="800" }
 
 ## Features
 
