@@ -1,0 +1,11 @@
+audio-separator==0.41.1
+demucs==4.0.1
+librosa==0.11.0
+numpy
+onnxruntime-gpu
+pretty_midi==0.2.11
+pydantic
+rich==14.3.3
+scipy
+soundfile==0.13.1
+typer==0.24.1

@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "suno-ableton-preprocessor"
+version = "0.1.0"
+description = "Suno AI export preprocessor for Ableton Live"
+requires-python = ">=3.11"
+dependencies = [
+    "librosa>=0.11.0",
+    "numpy",
+    "pretty_midi>=0.2.10",
+    "pydantic>=2.0",
+    "rich>=13.0",
+    "scipy",
+    "soundfile>=0.12",
+    "typer>=0.9",
+]
+
+[project.optional-dependencies]
+tui = [
+    "textual>=1.0",
+]
+separation = [
+    "demucs>=4.0",
+    "audio-separator>=0.17",
+    "onnxruntime",
+]
+separation-gpu = [
+    "demucs>=4.0",
+    "audio-separator>=0.17",
+    "onnxruntime-gpu",
+]
+
+[project.scripts]
+suno-ableton-preprocessor = "suno_ableton_preprocessor.cli:app"
+
+[tool.setuptools.packages.find]
+include = ["suno_ableton_preprocessor*"]
