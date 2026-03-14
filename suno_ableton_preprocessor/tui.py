@@ -244,7 +244,7 @@ class SunoPrepTUI(App):
     }
     #phase2-row-1 Checkbox {
         width: auto;
-        margin: 0 1;
+        margin: 0 1 0 0;
     }
     #phase2-row-2 Checkbox {
         width: auto;

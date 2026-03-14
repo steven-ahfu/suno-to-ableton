@@ -1,0 +1,99 @@
+site_name: Suno Ableton Preprocessor
+site_description: Suno AI export preprocessor for Ableton Live
+repo_url: https://github.com/steven-ahfu/suno-ableton-preprocessor
+
+
+theme:
+  name: material
+  favicon: https://github.githubassets.com/favicons/favicon.png
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    # - navigation.instant
+    - navigation.footer
+    - navigation.top
+    - navigation.tracking
+    - search.suggest
+    - search.highlight
+    - search.share
+    - content.code.copy
+    - content.code.annotate
+
+  # Catppuccin Color Palette Configuration
+  # Users can toggle between all 4 flavors
+  palette:
+    # Catppuccin Latte (Light mode)
+    - scheme: latte
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to Frappé
+
+    # Catppuccin Frappé (Dark mode - coolest)
+    - scheme: frappe
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-night
+        name: Switch to Macchiato
+
+    # Catppuccin Macchiato (Dark mode - warm)
+    - scheme: macchiato
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-partly-cloudy
+        name: Switch to Mocha
+
+    # Catppuccin Mocha (Dark mode - warmest)
+    - scheme: mocha
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-cloudy
+        name: Switch to Latte
+
+extra_css:
+  - stylesheets/extra.css
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+      linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.tabbed:
+      alternate_style: true
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+nav:
+  - Home: index.md
+  - Installation: install.md
+  - Exporting from Suno: suno-export.md
+  - Usage:
+      - CLI: usage-cli.md
+      - TUI: usage-tui.md
+      - CLI Flags Reference: cli-flags.md
+      - ALS Export: als-export.md
+      - Workflow Examples: workflows.md
+      - Reports & Output: reports.md
+  - Advanced Features:
+      - Overview: features/index.md
+      - Stem Quality Judgment: features/stem-quality-judgment.md
+      - Grid Anchor (Bar-1 Detection): features/grid-anchor.md
+      - Section Detection: features/section-detection.md
+      - Harmonic MIDI Repair: features/harmonic-midi-repair.md
+      - MIDI Requantization: features/requantization.md
+      - Separation Strategy: features/separation-strategy.md
+  - Contributing: contributing.md

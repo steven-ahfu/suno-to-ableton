@@ -1,0 +1,11 @@
+LICENSE
+LICENSE.*
+COPYING
+NOTICE
+README_AI.md
+*:Zone.Identifier
+.venv/
+node_modules/
+dist/
+build/
+site/
