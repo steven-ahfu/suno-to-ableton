@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import time
 from pathlib import Path
 
 from rich.console import Console
@@ -11,6 +12,7 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.containers import Vertical as VContainer
+from textual.screen import Screen
 from textual.widgets import (
     Button,
     Checkbox,
@@ -23,6 +25,8 @@ from textual.widgets import (
     Rule,
     Select,
     Static,
+    TabbedContent,
+    TabPane,
 )
 
 
@@ -55,6 +59,7 @@ import suno_to_ableton.reporting as reporting_module
 from .config import SunoPrepConfig
 from .discovery import discover_project, scan_for_projects
 from .models import ProcessingManifest, ProjectInventory
+from .progress import PipelineStep, StepStatus, make_steps
 
 # ── Help text for every interactive widget ──────────────────────────────
 
@@ -148,8 +153,8 @@ TOOLTIPS: dict[str, str] = {
         "Generate an Ableton Live Set (.als) from processed output. Experimental."
     ),
     "als-template": (
-        "Path to Example.als template. "
-        "Leave blank for auto-detection."
+        "Path to Ableton .als template. "
+        "Auto-detected from templates/ directory if left blank."
     ),
 
     # Tables / panels
@@ -164,6 +169,292 @@ TOOLTIPS: dict[str, str] = {
         "Click a row to select that project."
     ),
 }
+
+
+# ── Status display helpers ───────────────────────────────────────────────
+
+_STATUS_ICONS: dict[StepStatus, str] = {
+    StepStatus.PENDING: "[ ]",
+    StepStatus.RUNNING: "[>>]",
+    StepStatus.DONE: "[ok]",
+    StepStatus.SKIPPED: "[--]",
+    StepStatus.ERROR: "[!!]",
+}
+
+
+def _fmt_elapsed(step: PipelineStep) -> str:
+    elapsed = step.elapsed
+    if elapsed is None:
+        return ""
+    return f"{elapsed:.1f}s"
+
+
+# ── ProcessingScreen ─────────────────────────────────────────────────────
+
+
+class ProcessingScreen(Screen):
+    """Dedicated screen showing real-time pipeline progress."""
+
+    CSS = """
+    ProcessingScreen {
+        padding: 0;
+    }
+    #step-table {
+        height: auto;
+        max-height: 14;
+        margin: 1 1 0 1;
+    }
+    #proc-log {
+        height: 1fr;
+        min-height: 6;
+        margin: 1 1;
+        border: solid $accent;
+    }
+    #results-tabs {
+        height: auto;
+        max-height: 14;
+        margin: 0 1;
+        display: none;
+    }
+    """
+
+    BINDINGS = [
+        Binding("escape", "cancel", "Cancel", priority=True),
+        Binding("enter", "finish", "Close", show=False),
+        Binding("q", "finish", "Close", show=False),
+    ]
+
+    def __init__(self, config: SunoPrepConfig) -> None:
+        super().__init__()
+        self._config = config
+        self._steps = make_steps()
+        self._step_map: dict[str, PipelineStep] = {s.key: s for s in self._steps}
+        self._finished = False
+        self._output_dir: Path | None = None
+        self._buffer_pos: int = 0
+        self._manifest: ProcessingManifest | None = None
+
+    def compose(self) -> ComposeResult:
+        yield Header()
+        with Vertical():
+            yield DataTable(id="step-table", cursor_type="none")
+            yield Log(id="proc-log", auto_scroll=True)
+            with TabbedContent(id="results-tabs"):
+                with TabPane("Stems", id="tab-stems"):
+                    yield DataTable(id="stems-table", cursor_type="none")
+                with TabPane("MIDI", id="tab-midi"):
+                    yield DataTable(id="midi-table", cursor_type="none")
+                with TabPane("Features", id="tab-features"):
+                    yield DataTable(id="features-table", cursor_type="none")
+                with TabPane("Warnings", id="tab-warnings"):
+                    yield DataTable(id="warnings-table", cursor_type="none")
+        yield Footer()
+
+    def on_mount(self) -> None:
+        # Set up step table
+        table = self.query_one("#step-table", DataTable)
+        table.add_columns("#", "Step", "Status", "Time", "Detail")
+        for step in self._steps:
+            table.add_row(
+                str(step.number),
+                step.label,
+                _STATUS_ICONS[step.status],
+                "",
+                "",
+                key=step.key,
+            )
+
+        # Set up result tables (columns only — rows added when done)
+        stems_t = self.query_one("#stems-table", DataTable)
+        stems_t.add_columns("File", "Type", "Generated", "Steps")
+
+        midi_t = self.query_one("#midi-table", DataTable)
+        midi_t.add_columns("File", "Steps")
+
+        features_t = self.query_one("#features-table", DataTable)
+        features_t.add_columns("Feature", "Mode", "Confidence", "Recommendation")
+
+        warnings_t = self.query_one("#warnings-table", DataTable)
+        warnings_t.add_columns("Warning",)
+
+        # Start pipeline worker
+        self._run_pipeline()
+
+    # ── Progress callback (called from pipeline thread) ──────────────
+
+    def _handle_progress(self, step_key: str, status: StepStatus, detail: str) -> None:
+        step = self._step_map.get(step_key)
+        if step is None:
+            return
+
+        now = time.monotonic()
+        if status == StepStatus.RUNNING and step.status != StepStatus.RUNNING:
+            step.started_at = now
+        if status in (StepStatus.DONE, StepStatus.SKIPPED, StepStatus.ERROR):
+            step.finished_at = now
+
+        step.status = status
+        if detail:
+            step.detail = detail
+        if status == StepStatus.ERROR:
+            step.error_msg = detail
+
+        self.app.call_from_thread(self._refresh_step_row, step_key)
+
+    def _refresh_step_row(self, step_key: str) -> None:
+        step = self._step_map[step_key]
+        table = self.query_one("#step-table", DataTable)
+        try:
+            table.update_cell(step_key, "#", str(step.number))
+            table.update_cell(step_key, "Step", step.label)
+            table.update_cell(step_key, "Status", _STATUS_ICONS[step.status])
+            table.update_cell(step_key, "Time", _fmt_elapsed(step))
+            table.update_cell(step_key, "Detail", step.detail)
+        except Exception:
+            pass
+
+    def _tick_elapsed(self) -> None:
+        """Refresh elapsed time for any running steps."""
+        table = self.query_one("#step-table", DataTable)
+        for step in self._steps:
+            if step.status == StepStatus.RUNNING:
+                try:
+                    table.update_cell(step.key, "Time", _fmt_elapsed(step))
+                except Exception:
+                    pass
+
+    # ── Pipeline worker ──────────────────────────────────────────────
+
+    @work(thread=True, exclusive=True)
+    def _run_pipeline(self) -> None:
+        # Redirect console output to buffer
+        buffer = io.StringIO()
+        captured = Console(file=buffer, width=120, force_terminal=False)
+
+        orig_reporting = reporting_module.console
+        orig_pipeline = pipeline_module.console
+        orig_pipeline_console = pipeline_module._console
+
+        reporting_module.console = captured
+        pipeline_module.console = captured
+        pipeline_module._console = captured
+
+        # Start drain timer + elapsed ticker
+        drain_timer = self.app.call_from_thread(
+            self.app.set_interval, 0.1, lambda: self._drain_buffer(buffer)
+        )
+        elapsed_timer = self.app.call_from_thread(
+            self.app.set_interval, 0.5, self._tick_elapsed
+        )
+
+        try:
+            manifest = pipeline_module.run_pipeline(
+                self._config, on_progress=self._handle_progress
+            )
+            self._manifest = manifest
+            self._output_dir = self._config.resolved_output_dir
+
+            # Final drain
+            self._drain_sync(buffer)
+
+            self.app.call_from_thread(self._show_results, manifest)
+        except Exception as e:
+            self._drain_sync(buffer)
+            self.app.call_from_thread(
+                self.query_one("#proc-log", Log).write_line, f"\nERROR: {e}"
+            )
+        finally:
+            reporting_module.console = orig_reporting
+            pipeline_module.console = orig_pipeline
+            pipeline_module._console = orig_pipeline_console
+
+            self.app.call_from_thread(drain_timer.stop)
+            self.app.call_from_thread(elapsed_timer.stop)
+            self._finished = True
+
+    def _drain_buffer(self, buffer: io.StringIO) -> None:
+        content = buffer.getvalue()
+        if len(content) > self._buffer_pos:
+            new_text = content[self._buffer_pos:]
+            self._buffer_pos = len(content)
+            log = self.query_one("#proc-log", Log)
+            for line in new_text.splitlines():
+                stripped = line.strip()
+                if stripped:
+                    log.write_line(stripped)
+
+    def _drain_sync(self, buffer: io.StringIO) -> None:
+        content = buffer.getvalue()
+        if len(content) > self._buffer_pos:
+            new_text = content[self._buffer_pos:]
+            self._buffer_pos = len(content)
+            log = self.query_one("#proc-log", Log)
+            for line in new_text.splitlines():
+                stripped = line.strip()
+                if stripped:
+                    self.app.call_from_thread(log.write_line, stripped)
+
+    # ── Results ──────────────────────────────────────────────────────
+
+    def _show_results(self, manifest: ProcessingManifest) -> None:
+        # Stems tab
+        stems_t = self.query_one("#stems-table", DataTable)
+        for pf in manifest.stems:
+            stems_t.add_row(
+                pf.output_path.name,
+                pf.stem_type.value,
+                "yes" if pf.was_generated else "",
+                ", ".join(pf.processing_steps[:3]),
+            )
+        for pf in manifest.generated_stems:
+            stems_t.add_row(
+                pf.output_path.name,
+                pf.stem_type.value,
+                "yes",
+                ", ".join(pf.processing_steps[:3]),
+            )
+
+        # MIDI tab
+        midi_t = self.query_one("#midi-table", DataTable)
+        for pf in manifest.midi_files:
+            midi_t.add_row(
+                pf.output_path.name,
+                ", ".join(pf.processing_steps[:4]),
+            )
+
+        # Features tab
+        features_t = self.query_one("#features-table", DataTable)
+        for fi in manifest.features_invoked:
+            features_t.add_row(
+                fi.feature,
+                fi.mode,
+                f"{fi.confidence:.2f}" if fi.confidence is not None else "",
+                fi.recommendation or "",
+            )
+
+        # Warnings tab
+        warnings_t = self.query_one("#warnings-table", DataTable)
+        for w in manifest.warnings:
+            warnings_t.add_row(w)
+
+        # Show the tabs
+        self.query_one("#results-tabs", TabbedContent).styles.display = "block"
+
+    # ── Actions ──────────────────────────────────────────────────────
+
+    def check_action(self, action: str, parameters: tuple) -> bool | None:
+        if action == "finish" and not self._finished:
+            return False
+        return True
+
+    def action_finish(self) -> None:
+        self.dismiss(self._output_dir)
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
+
+
+# ── Main TUI App ─────────────────────────────────────────────────────────
 
 
 class SunoPrepTUI(App):
@@ -316,27 +607,21 @@ class SunoPrepTUI(App):
         margin: 1 1;
         border: solid $accent;
     }
-    #results {
-        height: auto;
-        max-height: 5;
-        margin: 0 1;
-        display: none;
-    }
 
     """
 
     BINDINGS = [
         Binding("q", "quit", "Quit"),
         Binding("d", "toggle_dark", "Dark/Light"),
-        Binding("f5", "scan", "Scan"),
-        Binding("f9", "process", "Process"),
+        Binding("f5", "scan", "Scan", priority=True),
+        Binding("f9", "process", "Process", priority=True),
     ]
 
     def __init__(self):
         super().__init__()
         self._inventory: ProjectInventory | None = None
-        self._buffer_pos: int = 0
         self._found_projects: list[tuple[Path, str]] = []
+        self._final_output_dir: Path | None = None
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -414,7 +699,6 @@ class SunoPrepTUI(App):
 
             yield DataTable(id="inventory")
             yield Log(id="pipeline-log", auto_scroll=True)
-            yield Static(id="results")
         yield HelpFooter()
 
     def on_mount(self) -> None:
@@ -475,8 +759,34 @@ class SunoPrepTUI(App):
         export_field = self.query_one(".export-field")
         if enabled:
             export_field.remove_class("-disabled")
+            # Auto-detect template if field is empty
+            if not template_input.value.strip():
+                detected = self._detect_template()
+                if detected:
+                    template_input.value = str(detected)
         else:
             export_field.add_class("-disabled")
+
+    def _detect_template(self) -> Path | None:
+        """Try to find the Ableton template in common locations."""
+        repo_root = Path(__file__).parent.parent
+        source_dir_str = self.query_one("#source-dir", Input).value.strip()
+        source_dir = Path(source_dir_str) if source_dir_str else None
+
+        candidates = [
+            repo_root / "templates" / "Ableton 12.als",
+        ]
+        if source_dir:
+            candidates.extend([
+                source_dir / "Example.als",
+                source_dir.parent / "Example.als",
+            ])
+        candidates.append(repo_root / "Example.als")
+
+        for p in candidates:
+            if p.exists():
+                return p
+        return None
 
     def on_checkbox_changed(self, event: Checkbox.Changed) -> None:
         if event.checkbox.id == "export-als":
@@ -553,8 +863,6 @@ class SunoPrepTUI(App):
         source = Path(self.query_one("#source-dir", Input).value).resolve()
         log = self.query_one("#pipeline-log", Log)
         log.clear()
-        self.query_one("#results", Static).update("")
-        self.query_one("#results", Static).styles.display = "none"
 
         try:
             inventory = discover_project(source)
@@ -624,134 +932,47 @@ class SunoPrepTUI(App):
 
     def action_process(self) -> None:
         if self.query_one("#process", Button).disabled:
+            self.notify("Scan a directory first before processing.", severity="warning")
             return
-        self._run_pipeline()
+        config = self._build_config()
+        self.push_screen(ProcessingScreen(config), callback=self._on_processing_done)
 
-    @work(thread=True, exclusive=True)
-    def _run_pipeline(self) -> None:
-        log = self.call_from_thread(self.query_one, "#pipeline-log", Log)
-        self.call_from_thread(log.clear)
-        self._buffer_pos = 0
+    def _build_config(self) -> SunoPrepConfig:
+        """Build a SunoPrepConfig from current UI widget values."""
+        source_dir = Path(self.query_one("#source-dir", Input).value).resolve()
 
-        # Build config from UI
-        source_dir = Path(
-            self.call_from_thread(self._get_input_value, "#source-dir")
-        ).resolve()
+        als_template_str = self.query_one("#als-template", Input).value.strip()
+        als_template = Path(als_template_str) if als_template_str else None
 
-        # ALS template
-        als_template_str = self.call_from_thread(
-            self._get_input_value, "#als-template"
-        )
-        als_template = Path(als_template_str) if als_template_str.strip() else None
-
-        config = SunoPrepConfig(
+        return SunoPrepConfig(
             source_dir=source_dir,
             output_dir=Path("processed"),
-            dry_run=self.call_from_thread(self._get_checkbox_value, "#dry-run"),
-            verbose=self.call_from_thread(self._get_checkbox_value, "#verbose"),
-            skip_existing=self.call_from_thread(
-                self._get_checkbox_value, "#skip-existing"
-            ),
-            force=self.call_from_thread(self._get_checkbox_value, "#force"),
-            target_sr=int(
-                self.call_from_thread(self._get_input_value, "#target-sr")
-            ),
-            quantize_grid=self.call_from_thread(
-                self._get_input_value, "#quantize-grid"
-            ),
-            min_note_ms=float(
-                self.call_from_thread(self._get_input_value, "#min-note-ms")
-            ),
-            separate_missing=self.call_from_thread(
-                self._get_checkbox_value, "#separate-missing"
-            ),
+            dry_run=self.query_one("#dry-run", Checkbox).value,
+            verbose=self.query_one("#verbose", Checkbox).value,
+            skip_existing=self.query_one("#skip-existing", Checkbox).value,
+            force=self.query_one("#force", Checkbox).value,
+            target_sr=int(self.query_one("#target-sr", Input).value),
+            quantize_grid=self.query_one("#quantize-grid", Input).value,
+            min_note_ms=float(self.query_one("#min-note-ms", Input).value),
+            separate_missing=self.query_one("#separate-missing", Checkbox).value,
             # Phase 2 features
-            choose_stems=self.call_from_thread(
-                self._get_checkbox_value, "#choose-stems"
-            ),
-            choose_grid_anchor=self.call_from_thread(
-                self._get_checkbox_value, "#choose-grid-anchor"
-            ),
-            detect_sections=self.call_from_thread(
-                self._get_checkbox_value, "#detect-sections"
-            ),
-            repair_midi=self.call_from_thread(
-                self._get_checkbox_value, "#repair-midi"
-            ),
-            requantize_midi=self.call_from_thread(
-                self._get_checkbox_value, "#requantize-midi"
-            ),
-            requantize_mode=self.call_from_thread(
-                self._get_select_value, "#requantize-mode"
-            ),
-            reseparate=self.call_from_thread(
-                self._get_checkbox_value, "#reseparate"
-            ),
-            apply_features=self.call_from_thread(
-                self._get_checkbox_value, "#apply-features"
-            ),
+            choose_stems=self.query_one("#choose-stems", Checkbox).value,
+            choose_grid_anchor=self.query_one("#choose-grid-anchor", Checkbox).value,
+            detect_sections=self.query_one("#detect-sections", Checkbox).value,
+            repair_midi=self.query_one("#repair-midi", Checkbox).value,
+            requantize_midi=self.query_one("#requantize-midi", Checkbox).value,
+            requantize_mode=str(self.query_one("#requantize-mode", Select).value),
+            reseparate=self.query_one("#reseparate", Checkbox).value,
+            apply_features=self.query_one("#apply-features", Checkbox).value,
             # ALS export
-            export_als=self.call_from_thread(
-                self._get_checkbox_value, "#export-als"
-            ),
+            export_als=self.query_one("#export-als", Checkbox).value,
             als_template=als_template,
         )
 
-        # Redirect console output to buffer
-        buffer = io.StringIO()
-        captured = Console(file=buffer, width=120, force_terminal=False)
-
-        orig_reporting = reporting_module.console
-        orig_pipeline = pipeline_module.console
-        orig_pipeline_console = pipeline_module._console
-
-        reporting_module.console = captured
-        pipeline_module.console = captured
-        pipeline_module._console = captured
-
-        # Start drain timer
-        timer = self.call_from_thread(self.set_interval, 0.1, self._drain_buffer, buffer)
-
-        try:
-            self.call_from_thread(self._set_processing, True)
-            manifest = pipeline_module.run_pipeline(config)
-
-            # Final drain
-            self._drain_sync(buffer)
-
-            self.call_from_thread(self._show_results, manifest)
-        except Exception as e:
-            self._drain_sync(buffer)
-            self.call_from_thread(log.write_line, f"\nERROR: {e}")
-        finally:
-            reporting_module.console = orig_reporting
-            pipeline_module.console = orig_pipeline
-            pipeline_module._console = orig_pipeline_console
-
-            self.call_from_thread(timer.stop)
-            self.call_from_thread(self._set_processing, False)
-
-    def _drain_buffer(self, buffer: io.StringIO) -> None:
-        content = buffer.getvalue()
-        if len(content) > self._buffer_pos:
-            new_text = content[self._buffer_pos :]
-            self._buffer_pos = len(content)
-            log = self.query_one("#pipeline-log", Log)
-            for line in new_text.splitlines():
-                stripped = line.strip()
-                if stripped:
-                    log.write_line(stripped)
-
-    def _drain_sync(self, buffer: io.StringIO) -> None:
-        content = buffer.getvalue()
-        if len(content) > self._buffer_pos:
-            new_text = content[self._buffer_pos :]
-            self._buffer_pos = len(content)
-            log = self.query_one("#pipeline-log", Log)
-            for line in new_text.splitlines():
-                stripped = line.strip()
-                if stripped:
-                    self.call_from_thread(log.write_line, stripped)
+    def _on_processing_done(self, output_dir: Path | None) -> None:
+        """Called when ProcessingScreen is dismissed."""
+        self._final_output_dir = output_dir
+        self.exit()
 
     def _get_input_value(self, selector: str) -> str:
         return self.query_one(selector, Input).value
@@ -762,33 +983,10 @@ class SunoPrepTUI(App):
     def _get_select_value(self, selector: str) -> str:
         return self.query_one(selector, Select).value
 
-    def _set_processing(self, processing: bool) -> None:
-        self.query_one("#scan", Button).disabled = processing
-        self.query_one("#process", Button).disabled = processing
-        self.query_one("#source-dir", Input).disabled = processing
-
-    def _show_results(self, manifest: ProcessingManifest) -> None:
-        results = self.query_one("#results", Static)
-        lines = [f"Song: {manifest.song_title}"]
-        if manifest.bpm is not None:
-            lines.append(
-                f"BPM: {manifest.bpm:.1f} (confidence: {manifest.bpm_confidence:.2f})"
-            )
-        lines.append(
-            f"Stems: {len(manifest.stems)} | MIDI: {len(manifest.midi_files)}"
-        )
-        if manifest.generated_stems:
-            lines.append(f"Generated stems: {len(manifest.generated_stems)}")
-        if manifest.features_invoked:
-            features = [f.feature for f in manifest.features_invoked]
-            lines.append(f"Features: {', '.join(features)}")
-        if manifest.warnings:
-            lines.append(f"Warnings: {len(manifest.warnings)}")
-        results.update("\n".join(lines))
-        results.styles.display = "block"
-
 
 def run_tui() -> None:
     """Launch the TUI application."""
     app = SunoPrepTUI()
     app.run()
+    if app._final_output_dir:
+        print(f"\nOutput directory: {app._final_output_dir}")

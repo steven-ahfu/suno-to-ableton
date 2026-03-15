@@ -29,16 +29,31 @@ from .reporting import (
     write_json_report,
     write_manifest,
 )
+from .progress import ProgressCallback, StepStatus
 from .separation import get_backend
 
 _console = Console()
 
 
-def run_pipeline(config: SunoPrepConfig) -> ProcessingManifest:
+def _emit(
+    on_progress: ProgressCallback | None,
+    key: str,
+    status: StepStatus,
+    detail: str = "",
+) -> None:
+    if on_progress:
+        on_progress(key, status, detail)
+
+
+def run_pipeline(
+    config: SunoPrepConfig,
+    on_progress: ProgressCallback | None = None,
+) -> ProcessingManifest:
     """Run the full processing pipeline."""
     manifest = ProcessingManifest(target_sr=config.target_sr)
 
     # Step 1: Discovery
+    _emit(on_progress, "discovery", StepStatus.RUNNING)
     console.print("\n[bold]Step 1:[/bold] Discovering files...")
     inventory = discover_project(config.source_dir)
     print_inventory(inventory)
@@ -47,15 +62,20 @@ def run_pipeline(config: SunoPrepConfig) -> ProcessingManifest:
 
     if not inventory.full_mix and not inventory.stems:
         console.print("[red]No audio files found. Aborting.[/red]")
+        _emit(on_progress, "discovery", StepStatus.ERROR, "No audio files found")
         return manifest
+    _emit(on_progress, "discovery", StepStatus.DONE)
 
     # Step 2: Create output dirs
+    _emit(on_progress, "output_dirs", StepStatus.RUNNING)
     console.print("\n[bold]Step 2:[/bold] Creating output directories...")
     config.ensure_output_dirs()
     if config.dry_run:
         console.print("  [dim](dry run — no directories created)[/dim]")
+    _emit(on_progress, "output_dirs", StepStatus.DONE)
 
     # Step 3: BPM detection
+    _emit(on_progress, "bpm", StepStatus.RUNNING)
     console.print("\n[bold]Step 3:[/bold] Detecting BPM...")
     bpm_result: BPMResult | None = None
     try:
@@ -63,12 +83,15 @@ def run_pipeline(config: SunoPrepConfig) -> ProcessingManifest:
         print_bpm_result(bpm_result)
         manifest.bpm = bpm_result.bpm
         manifest.bpm_confidence = bpm_result.confidence
+        _emit(on_progress, "bpm", StepStatus.DONE)
     except Exception as e:
         msg = f"BPM detection failed: {e}"
         console.print(f"  [yellow]Warning: {msg}[/yellow]")
         manifest.warnings.append(msg)
+        _emit(on_progress, "bpm", StepStatus.ERROR, msg)
 
     # Step 4: Alignment
+    _emit(on_progress, "alignment", StepStatus.RUNNING)
     console.print("\n[bold]Step 4:[/bold] Computing alignment...")
     alignment: AlignmentResult | None = None
     if bpm_result:
@@ -77,12 +100,15 @@ def run_pipeline(config: SunoPrepConfig) -> ProcessingManifest:
         manifest.offset_seconds = alignment.offset_seconds
         manifest.offset_samples = alignment.offset_samples
         manifest.samples_per_beat = alignment.samples_per_beat
+        _emit(on_progress, "alignment", StepStatus.DONE)
     else:
         console.print("  [yellow]Skipping alignment (no BPM data)[/yellow]")
+        _emit(on_progress, "alignment", StepStatus.SKIPPED, "No BPM data")
 
     offset = alignment.offset_seconds if alignment else 0.0
 
     # Step 5: Audio processing
+    _emit(on_progress, "audio", StepStatus.RUNNING)
     console.print("\n[bold]Step 5:[/bold] Processing audio files...")
     all_audio_files = []
     if inventory.full_mix:
@@ -95,6 +121,7 @@ def run_pipeline(config: SunoPrepConfig) -> ProcessingManifest:
         console=_console,
     ) as progress:
         for file in all_audio_files:
+            _emit(on_progress, "audio", StepStatus.RUNNING, file.path.name)
             task = progress.add_task(f"Processing {file.path.name}...", total=None)
             try:
                 output_path, steps = process_audio_file(
@@ -116,9 +143,11 @@ def run_pipeline(config: SunoPrepConfig) -> ProcessingManifest:
                 manifest.warnings.append(msg)
             finally:
                 progress.remove_task(task)
+    _emit(on_progress, "audio", StepStatus.DONE)
 
     # Step 6: MIDI cleanup
     if inventory.midi_files:
+        _emit(on_progress, "midi", StepStatus.RUNNING)
         console.print("\n[bold]Step 6:[/bold] Cleaning MIDI files...")
         bpm_for_midi = manifest.bpm
         if bpm_for_midi is None:
@@ -127,6 +156,7 @@ def run_pipeline(config: SunoPrepConfig) -> ProcessingManifest:
             manifest.warnings.append("No BPM detected — MIDI cleanup used fallback of 120 BPM")
 
         for midi_file in inventory.midi_files:
+            _emit(on_progress, "midi", StepStatus.RUNNING, midi_file.path.name)
             try:
                 result = cleanup_midi(
                     midi_file.path,
@@ -159,11 +189,14 @@ def run_pipeline(config: SunoPrepConfig) -> ProcessingManifest:
                 msg = f"Failed to process MIDI {midi_file.path.name}: {e}"
                 console.print(f"  [yellow]Warning: {msg}[/yellow]")
                 manifest.warnings.append(msg)
+        _emit(on_progress, "midi", StepStatus.DONE)
     else:
         console.print("\n[bold]Step 6:[/bold] No MIDI files to process.")
+        _emit(on_progress, "midi", StepStatus.SKIPPED, "No MIDI files")
 
     # Step 7: Optional stem separation
     if config.separate_missing and inventory.full_mix:
+        _emit(on_progress, "separation", StepStatus.RUNNING)
         console.print("\n[bold]Step 7:[/bold] Running stem separation...")
         try:
             backend = get_backend(config)
@@ -189,13 +222,19 @@ def run_pipeline(config: SunoPrepConfig) -> ProcessingManifest:
                     )
                 )
             console.print(f"  Generated {len(result.output_stems)} stems")
+            _emit(on_progress, "separation", StepStatus.DONE)
         except Exception as e:
             msg = f"Stem separation failed: {e}"
             console.print(f"  [yellow]Warning: {msg}[/yellow]")
             manifest.warnings.append(msg)
+            _emit(on_progress, "separation", StepStatus.ERROR, msg)
+    else:
+        _emit(on_progress, "separation", StepStatus.SKIPPED, "Not requested")
 
     # Advanced optional features (only if explicitly requested)
-    _run_advanced_features(config, manifest, inventory, bpm_result, alignment)
+    _emit(on_progress, "advanced", StepStatus.RUNNING)
+    _run_advanced_features(config, manifest, inventory, bpm_result, alignment, on_progress)
+    _emit(on_progress, "advanced", StepStatus.DONE)
 
     # ALS Export (after all processing, before reports)
     if config.export_als:
@@ -215,6 +254,7 @@ def run_pipeline(config: SunoPrepConfig) -> ProcessingManifest:
             manifest.warnings.append(msg)
 
     # Step 8: Write reports
+    _emit(on_progress, "reports", StepStatus.RUNNING)
     if not config.dry_run:
         console.print("\n[bold]Step 8:[/bold] Writing reports...")
         manifest_path = write_manifest(manifest, config)
@@ -240,8 +280,10 @@ def run_pipeline(config: SunoPrepConfig) -> ProcessingManifest:
                 "target_sr": config.target_sr,
             }
             write_json_report(timing_report, "timing_report.json", config)
+        _emit(on_progress, "reports", StepStatus.DONE)
     else:
         console.print("\n[bold]Step 8:[/bold] [dim](dry run — no reports written)[/dim]")
+        _emit(on_progress, "reports", StepStatus.SKIPPED, "Dry run")
 
     # Step 9: Summary
     print_summary(manifest)
@@ -255,6 +297,7 @@ def _run_advanced_features(
     inventory,
     bpm_result: BPMResult | None,
     alignment: AlignmentResult | None,
+    on_progress: ProgressCallback | None = None,
 ) -> None:
     """Run any advanced optional features that were requested."""
     any_advanced = (

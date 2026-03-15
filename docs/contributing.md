@@ -21,12 +21,16 @@ source .venv/bin/activate
 # Install with all extras for development
 pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
 pip install -e '.[tui,separation]'
+
+# Install test dependencies
+pip install pytest pytest-asyncio
 ```
 
 ### 3. Verify
 
 ```bash
 suno-to-ableton --help
+python -m pytest tests/ -v
 ```
 
 ## Project structure
@@ -43,6 +47,7 @@ suno_to_ableton/
 ├── separation.py           # Stem separation (Demucs/UVR) integration
 ├── models.py               # Pydantic data models
 ├── config.py               # Configuration and defaults
+├── progress.py             # Pipeline step status tracking for TUI progress display
 ├── reporting.py            # Manifest and report generation
 ├── tui.py                  # Textual TUI application
 └── features/               # Advanced opt-in features
@@ -53,6 +58,14 @@ suno_to_ableton/
     ├── requantize_midi.py  # Groove-aware requantization
     ├── reseparate.py       # Targeted re-separation
     └── export_als.py       # Ableton Live Set generation
+
+tests/
+├── test_models.py          # Data model unit tests
+├── test_config.py          # Config and path resolution tests
+├── test_alignment.py       # Alignment computation tests
+├── test_discovery.py       # File discovery and classification tests
+├── test_progress.py        # Pipeline step tracking tests
+└── test_tui_integration.py # End-to-end TUI integration tests (Textual pilot)
 ```
 
 ## How to contribute
@@ -83,14 +96,36 @@ Open an issue describing:
 
 2. Make your changes. Keep commits focused — one logical change per commit.
 
-3. Test your changes against a real Suno export if possible.
+3. Run the test suite and make sure everything passes:
+   ```bash
+   python -m pytest tests/ -v
+   ```
 
-4. Push and open a pull request:
+4. Test your changes against a real Suno export if possible.
+
+5. Push and open a pull request:
    ```bash
    git push origin feature/my-feature
    ```
 
-5. In your PR description, explain what changed and why.
+6. In your PR description, explain what changed and why.
+
+### Running tests
+
+```bash
+# Run all tests
+python -m pytest tests/ -v
+
+# Run a specific test file
+python -m pytest tests/test_discovery.py -v
+
+# Run the TUI integration tests only
+python -m pytest tests/test_tui_integration.py -v
+```
+
+Unit tests cover models, config, alignment, discovery, and progress tracking. Integration tests use [Textual's pilot API](https://textual.textualize.io/guide/testing/) to drive the TUI end-to-end with mock project data — no real audio files required.
+
+When adding new features, add tests for any pure logic (models, computation, classification). For TUI changes, add or update integration tests in `test_tui_integration.py`.
 
 ### Code style
 

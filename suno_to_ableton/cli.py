@@ -122,7 +122,7 @@ def process(
         False, "--export-als", help="Generate Ableton Live Set file"
     ),
     als_template: Optional[Path] = typer.Option(
-        None, "--als-template", help="Path to Example.als template"
+        None, "--als-template", help="Path to Ableton .als template"
     ),
 ) -> None:
     """Run the full preprocessing pipeline."""
@@ -404,7 +404,7 @@ def export_als_cmd(
     source_dir: Path = typer.Argument(".", help="Project directory"),
     output_dir: Path = typer.Option("processed", "--output-dir", "-o"),
     als_template: Optional[Path] = typer.Option(
-        None, "--als-template", help="Path to Example.als template"
+        None, "--als-template", help="Path to Ableton .als template"
     ),
 ) -> None:
     """Generate an Ableton Live Set from processed outputs (experimental)."""

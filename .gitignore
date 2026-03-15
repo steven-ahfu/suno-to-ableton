@@ -191,3 +191,4 @@ tmp/
 temp/
 projects/
 .agents/
+.omc/

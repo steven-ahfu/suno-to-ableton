@@ -42,7 +42,7 @@ class SunoPrepConfig(BaseModel):
     reseparate: bool = False
     apply_features: bool = False  # global --apply for advanced features
     export_als: bool = False
-    als_template: Optional[Path] = None  # path to Example.als template
+    als_template: Optional[Path] = None  # path to Ableton .als template
 
     @property
     def resolved_output_dir(self) -> Path:
