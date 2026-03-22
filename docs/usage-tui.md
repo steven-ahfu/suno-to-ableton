@@ -7,13 +7,13 @@ The TUI provides a point-and-click terminal interface for the preprocessor.
 Install the `tui` extra:
 
 ```bash
-pip install -e '.[tui]'
+uv sync --extra tui
 ```
 
 ## Launch
 
 ```bash
-suno-to-ableton tui
+uv run suno-to-ableton tui
 ```
 
 ![TUI screenshot](assets/tui.png){ width="800" }

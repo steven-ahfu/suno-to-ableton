@@ -229,6 +229,8 @@ class ProcessingScreen(Screen):
         self._config = config
         self._steps = make_steps()
         self._step_map: dict[str, PipelineStep] = {s.key: s for s in self._steps}
+        self._step_row_keys: dict[str, object] = {}
+        self._step_column_keys: dict[str, object] = {}
         self._finished = False
         self._output_dir: Path | None = None
         self._buffer_pos: int = 0
@@ -253,9 +255,12 @@ class ProcessingScreen(Screen):
     def on_mount(self) -> None:
         # Set up step table
         table = self.query_one("#step-table", DataTable)
-        table.add_columns("#", "Step", "Status", "Time", "Detail")
+        column_keys = table.add_columns("#", "Step", "Status", "Time", "Detail")
+        self._step_column_keys = dict(
+            zip(["number", "step", "status", "time", "detail"], column_keys)
+        )
         for step in self._steps:
-            table.add_row(
+            row_key = table.add_row(
                 str(step.number),
                 step.label,
                 _STATUS_ICONS[step.status],
@@ -263,6 +268,7 @@ class ProcessingScreen(Screen):
                 "",
                 key=step.key,
             )
+            self._step_row_keys[step.key] = row_key
 
         # Set up result tables (columns only — rows added when done)
         stems_t = self.query_one("#stems-table", DataTable)
@@ -304,12 +310,15 @@ class ProcessingScreen(Screen):
     def _refresh_step_row(self, step_key: str) -> None:
         step = self._step_map[step_key]
         table = self.query_one("#step-table", DataTable)
+        row_key = self._step_row_keys.get(step_key)
+        if row_key is None:
+            return
         try:
-            table.update_cell(step_key, "#", str(step.number))
-            table.update_cell(step_key, "Step", step.label)
-            table.update_cell(step_key, "Status", _STATUS_ICONS[step.status])
-            table.update_cell(step_key, "Time", _fmt_elapsed(step))
-            table.update_cell(step_key, "Detail", step.detail)
+            table.update_cell(row_key, self._step_column_keys["number"], str(step.number))
+            table.update_cell(row_key, self._step_column_keys["step"], step.label)
+            table.update_cell(row_key, self._step_column_keys["status"], _STATUS_ICONS[step.status])
+            table.update_cell(row_key, self._step_column_keys["time"], _fmt_elapsed(step))
+            table.update_cell(row_key, self._step_column_keys["detail"], step.detail)
         except Exception:
             pass
 
@@ -318,8 +327,15 @@ class ProcessingScreen(Screen):
         table = self.query_one("#step-table", DataTable)
         for step in self._steps:
             if step.status == StepStatus.RUNNING:
+                row_key = self._step_row_keys.get(step.key)
+                if row_key is None:
+                    continue
                 try:
-                    table.update_cell(step.key, "Time", _fmt_elapsed(step))
+                    table.update_cell(
+                        row_key,
+                        self._step_column_keys["time"],
+                        _fmt_elapsed(step),
+                    )
                 except Exception:
                     pass
 
@@ -774,7 +790,7 @@ class SunoPrepTUI(App):
         source_dir = Path(source_dir_str) if source_dir_str else None
 
         candidates = [
-            repo_root / "templates" / "Ableton 12.als",
+            repo_root / "templates" / "Ableton 12 Template.als",
         ]
         if source_dir:
             candidates.extend([

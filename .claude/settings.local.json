@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(claude usage 2>/dev/null || echo \"No built-in usage command\")",
+      "Bash(cat ~/.claude/stats-cache.json 2>/dev/null | python3 -m json.tool 2>/dev/null || cat ~/.claude/stats-cache.json 2>/dev/null)"
+    ]
+  }
+}

@@ -33,6 +33,10 @@ class TestClassifyStemName:
     def test_space_to_underscore(self):
         assert _classify_stem_name("backing vocals") == StemType.BACKING_VOCALS
 
+    def test_parenthetical_midi_style_name(self):
+        assert _classify_stem_name("untitled again (Drums)") == StemType.DRUMS
+        assert _classify_stem_name("My Song (Backing Vocals)") == StemType.BACKING_VOCALS
+
     def test_unknown_returns_other(self):
         assert _classify_stem_name("guitar") == StemType.OTHER
         assert _classify_stem_name("random") == StemType.OTHER
@@ -124,6 +128,22 @@ class TestDiscoverProject:
         assert inv.stems[0].stem_type == StemType.DRUMS
         assert inv.stems[1].stem_type == StemType.BASS
 
+    @patch("suno_to_ableton.discovery._probe_audio", return_value={
+        "sample_rate": 44100, "channels": 2, "frames": 100000,
+        "duration_seconds": 2.27, "subtype": "PCM_16",
+    })
+    def test_zero_indexed_stem_export_without_full_mix(self, mock_probe, tmp_path):
+        (tmp_path / "0 Drums.wav").touch()
+        (tmp_path / "1 Bass.wav").touch()
+        (tmp_path / "Song (Drums).mid").touch()
+
+        inv = discover_project(tmp_path)
+
+        assert inv.full_mix is None
+        assert [stem.stem_type for stem in inv.stems] == [StemType.DRUMS, StemType.BASS]
+        assert [stem.track_number for stem in inv.stems] == [0, 1]
+        assert inv.song_title == "Song"
+
     @patch("suno_to_ableton.discovery._probe_audio", return_value={})
     def test_unnumbered_audio_warns(self, mock_probe, tmp_path):
         (tmp_path / "random_audio.wav").touch()
@@ -174,6 +194,12 @@ class TestDiscoverProject:
         (tmp_path / "Cool Song - Remix.mid").touch()
         inv = discover_project(tmp_path)
         assert inv.song_title == "Cool Song"
+
+    def test_midi_stem_type_inferred_from_parenthetical_name(self, tmp_path):
+        (tmp_path / "Cool Song (Bass).mid").touch()
+        inv = discover_project(tmp_path)
+        assert len(inv.midi_files) == 1
+        assert inv.midi_files[0].stem_type == StemType.BASS
 
 
 class TestScanForProjects:

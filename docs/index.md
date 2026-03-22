@@ -20,18 +20,18 @@ Automates all the tedious work between exporting from Suno and actually producin
 
 ```bash
 # 1. Install prerequisites (Python 3.11+, ffmpeg) — see Installation page
-# 2. Clone and install
+# 2. Install uv
+# 3. Clone and install
 git clone https://github.com/steven-ahfu/suno-to-ableton.git
 cd suno-to-ableton
-python3 -m venv .venv && source .venv/bin/activate
-pip install -e .
+uv sync
 
-# 3. Export stems from Suno, unzip into a directory
+# 4. Export stems from Suno, unzip into a directory
 
-# 4. Process
-suno-to-ableton process ~/suno-exports/my-song --export-als
+# 5. Process
+uv run suno-to-ableton process ~/suno-exports/my-song --export-als
 
-# 5. Open processed/Song.als in Ableton Live
+# 6. Open processed/Song.als in Ableton Live
 ```
 
 ## Acknowledgments

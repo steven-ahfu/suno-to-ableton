@@ -96,6 +96,7 @@ class MIDICleanupResult(BaseModel):
     notes_quantized: int = 0
     offset_applied: float = 0.0
     tempo_set: float = 0.0
+    warnings: list[str] = Field(default_factory=list)
 
 
 class SeparationResult(BaseModel):

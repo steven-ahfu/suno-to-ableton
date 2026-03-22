@@ -356,3 +356,50 @@ async def test_processing_screen_handles_error(project_dir: Path):
             # Escape to dismiss
             await pilot.press("escape")
             await pilot.pause(0.3)
+
+
+@pytest.mark.asyncio
+async def test_processing_screen_updates_step_rows(project_dir: Path):
+    """Progress callback should update the step table cells."""
+
+    manifest = _make_manifest(project_dir)
+
+    def mock_run_pipeline(config: SunoPrepConfig, on_progress=None):
+        from suno_to_ableton.progress import StepStatus
+
+        if on_progress:
+            on_progress("discovery", StepStatus.RUNNING, "Scanning")
+            on_progress("discovery", StepStatus.DONE, "4 audio, 1 MIDI")
+        return manifest
+
+    with (
+        patch(
+            "suno_to_ableton.discovery._probe_audio",
+            return_value=AUDIO_META,
+        ),
+        patch(
+            "suno_to_ableton.pipeline.run_pipeline",
+            side_effect=mock_run_pipeline,
+        ),
+    ):
+        app = SunoPrepTUI()
+
+        async with app.run_test(size=(120, 40)) as pilot:
+            source_input = app.query_one("#source-dir")
+            source_input.value = str(project_dir)
+
+            await pilot.click("#scan")
+            await pilot.pause(0.2)
+            await pilot.click("#process")
+            await pilot.pause(0.8)
+
+            from suno_to_ableton.tui import ProcessingScreen
+
+            proc_screen = app.screen
+            assert isinstance(proc_screen, ProcessingScreen)
+
+            table = proc_screen.query_one("#step-table")
+            row_key = proc_screen._step_row_keys["discovery"]
+
+            assert str(table.get_cell(row_key, proc_screen._step_column_keys["status"])) == "[ok]"
+            assert str(table.get_cell(row_key, proc_screen._step_column_keys["detail"])) == "4 audio, 1 MIDI"

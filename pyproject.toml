@@ -9,6 +9,7 @@ description = "Suno AI export preprocessor for Ableton Live"
 requires-python = ">=3.11"
 dependencies = [
     "librosa>=0.11.0",
+    "mido",
     "numpy",
     "pretty_midi>=0.2.10",
     "pydantic>=2.0",
@@ -36,6 +37,12 @@ docs = [
     "mkdocs-material",
     "mkdocs-glightbox",
     "pygments",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0",
+    "pytest-asyncio",
 ]
 
 [project.scripts]

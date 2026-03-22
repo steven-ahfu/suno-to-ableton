@@ -15,22 +15,18 @@ cd suno-to-ableton
 ### 2. Development install
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
+uv sync --group dev --extra tui
 
-# Install with all extras for development
-pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
-pip install -e '.[tui,separation]'
-
-# Install test dependencies
-pip install pytest pytest-asyncio
+# Optional: install CPU stem-separation stack too
+uv pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
+uv sync --group dev --extra tui --extra separation
 ```
 
 ### 3. Verify
 
 ```bash
-suno-to-ableton --help
-python -m pytest tests/ -v
+uv run suno-to-ableton --help
+uv run pytest tests/ -v
 ```
 
 ## Project structure
@@ -98,7 +94,7 @@ Open an issue describing:
 
 3. Run the test suite and make sure everything passes:
    ```bash
-   python -m pytest tests/ -v
+   uv run pytest tests/ -v
    ```
 
 4. Test your changes against a real Suno export if possible.
@@ -114,13 +110,13 @@ Open an issue describing:
 
 ```bash
 # Run all tests
-python -m pytest tests/ -v
+uv run pytest tests/ -v
 
 # Run a specific test file
-python -m pytest tests/test_discovery.py -v
+uv run pytest tests/test_discovery.py -v
 
 # Run the TUI integration tests only
-python -m pytest tests/test_tui_integration.py -v
+uv run pytest tests/test_tui_integration.py -v
 ```
 
 Unit tests cover models, config, alignment, discovery, and progress tracking. Integration tests use [Textual's pilot API](https://textual.textualize.io/guide/testing/) to drive the TUI end-to-end with mock project data — no real audio files required.
@@ -151,8 +147,8 @@ Advanced features live in `suno_to_ableton/features/`. To add one:
 Documentation lives in `docs/` and is built with [MkDocs Material](https://squidfunk.github.io/mkdocs-material/). To preview locally:
 
 ```bash
-pip install mkdocs-material
-mkdocs serve
+uv sync --extra docs
+uv run mkdocs serve
 # Open http://127.0.0.1:8000
 ```
 

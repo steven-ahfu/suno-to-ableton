@@ -164,11 +164,12 @@ def run_pipeline(
                     offset,
                     bpm_for_midi,
                     config,
+                    stem_type=midi_file.stem_type,
                 )
                 manifest.midi_files.append(
                     ProcessedFile(
                         output_path=result.output_path,
-                        stem_type=StemType.OTHER,
+                        stem_type=midi_file.stem_type,
                         processing_steps=[
                             f"tracks kept: {result.tracks_kept}",
                             f"tracks removed: {result.tracks_removed}",
@@ -181,6 +182,9 @@ def run_pipeline(
                         ],
                     )
                 )
+                manifest.warnings.extend(result.warnings)
+                for warning in result.warnings:
+                    console.print(f"  [yellow]Warning: {warning}[/yellow]")
                 if config.verbose:
                     console.print(f"    {midi_file.path.name} → {result.output_path.name}")
                     console.print(f"      Tracks: {result.tracks_kept} kept, {result.tracks_removed} removed")

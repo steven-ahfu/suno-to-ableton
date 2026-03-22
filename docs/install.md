@@ -60,12 +60,32 @@ Verify it's available:
 ffmpeg -version
 ```
 
-## Step 3: Install pip
+## Step 3: Install uv
 
-Comes bundled with Python 3.11+. If missing:
+Install [uv](https://docs.astral.sh/uv/) to manage the virtualenv, dependencies, and commands.
+
+=== "macOS / Linux"
+
+    ```bash
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+    ```
+
+=== "Homebrew"
+
+    ```bash
+    brew install uv
+    ```
+
+=== "Windows"
+
+    ```powershell
+    winget install astral-sh.uv
+    ```
+
+Verify it's available:
 
 ```bash
-python3 -m ensurepip --upgrade
+uv --version
 ```
 
 ## Step 4: Clone and install the preprocessor
@@ -73,14 +93,7 @@ python3 -m ensurepip --upgrade
 ```bash
 git clone https://github.com/steven-ahfu/suno-to-ableton.git
 cd suno-to-ableton
-
-# Create a virtual environment (recommended)
-python3 -m venv .venv
-source .venv/bin/activate   # macOS/Linux
-# .venv\Scripts\activate    # Windows
-
-# Install the core package
-pip install -e .
+uv sync
 ```
 
 This installs everything needed for the default processing pipeline: stem discovery, naming, sample-rate conversion, silence trimming, BPM detection, grid alignment, MIDI cleanup, and report generation.
@@ -92,7 +105,7 @@ This installs everything needed for the default processing pipeline: stem discov
 Adds a point-and-click terminal UI for browsing projects, toggling options, and running the pipeline.
 
 ```bash
-pip install -e '.[tui]'
+uv sync --extra tui
 ```
 
 Installs [Textual](https://textual.textualize.io/) automatically.
@@ -106,10 +119,10 @@ Adds AI-powered stem separation via [Demucs](https://github.com/facebookresearch
 
 ```bash
 # 1. Install PyTorch (CPU-only)
-pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
+uv pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
 
 # 2. Install separation extras
-pip install -e '.[separation]'
+uv sync --extra separation
 ```
 
 ### Stem separation (NVIDIA GPU)
@@ -118,10 +131,10 @@ CUDA acceleration significantly speeds up stem separation. Requires an NVIDIA GP
 
 ```bash
 # 1. Install PyTorch with CUDA 12.1 support
-pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu121
+uv pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu121
 
 # 2. Install GPU separation extras
-pip install -e '.[separation-gpu]'
+uv sync --extra separation-gpu
 ```
 
 !!! tip
@@ -132,28 +145,28 @@ pip install -e '.[separation-gpu]'
 === "CPU"
 
     ```bash
-    pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
-    pip install -e '.[tui,separation]'
+    uv pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
+    uv sync --extra tui --extra separation
     ```
 
 === "GPU (NVIDIA)"
 
     ```bash
-    pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu121
-    pip install -e '.[tui,separation-gpu]'
+    uv pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu121
+    uv sync --extra tui --extra separation-gpu
     ```
 
 ## Verify the installation
 
 ```bash
 # Should print usage info
-suno-to-ableton --help
+uv run suno-to-ableton --help
 
 # Check ffmpeg
 ffmpeg -version
 
 # (Optional) Check PyTorch — only needed for stem separation
-python3 -c "import torch; print(f'PyTorch {torch.__version__}, CUDA: {torch.cuda.is_available()}')"
+uv run python -c "import torch; print(f'PyTorch {torch.__version__}, CUDA: {torch.cuda.is_available()}')"
 ```
 
 ## Updating
@@ -161,13 +174,13 @@ python3 -c "import torch; print(f'PyTorch {torch.__version__}, CUDA: {torch.cuda
 ```bash
 cd suno-to-ableton
 git pull
-pip install -e .
+uv sync
 ```
 
 ## Uninstalling
 
 ```bash
-pip uninstall suno-to-ableton
+rm -rf .venv
 ```
 
 ## Dependency reference

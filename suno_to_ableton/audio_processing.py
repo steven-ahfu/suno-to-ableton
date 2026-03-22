@@ -1,4 +1,4 @@
-"""Audio normalization and trimming via ffmpeg."""
+"""Audio normalization with source timing preserved."""
 
 from __future__ import annotations
 
@@ -131,7 +131,7 @@ def process_audio_file(
     """Full audio processing pipeline for a single file.
 
     1. Normalize format if needed
-    2. Trim by global offset
+    2. Preserve the original timeline
 
     Returns (output_path, processing_steps).
     """
@@ -147,20 +147,17 @@ def process_audio_file(
         if needs_conversion(file, config):
             steps.append(f"would normalize: sr={config.target_sr}")
         if offset_seconds > 0:
-            steps.append(f"would trim: {offset_seconds:.4f}s")
+            steps.append(
+                f"would preserve source timing (detected alignment offset={offset_seconds:.4f}s)"
+            )
         return final_output, steps
 
-    # If we need both normalize and trim, do it in one ffmpeg call
+    # Normalize if needed, but do not destructively trim the source files.
     needs_norm = needs_conversion(file, config)
 
-    if needs_norm or offset_seconds > 0:
+    if needs_norm:
         final_output.parent.mkdir(parents=True, exist_ok=True)
         cmd = ["ffmpeg", "-y", "-i", str(file.path)]
-
-        if offset_seconds > 0:
-            cmd.extend(["-ss", str(offset_seconds)])
-            steps.append(f"trimmed: offset={offset_seconds:.4f}s")
-
         cmd.extend([
             "-ar", str(config.target_sr),
             "-ac", str(config.target_channels),
@@ -179,5 +176,10 @@ def process_audio_file(
         final_output.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(file.path, final_output)
         steps.append("copied (no processing needed)")
+
+    if offset_seconds > 0:
+        steps.append(
+            f"source timing preserved (detected alignment offset={offset_seconds:.4f}s)"
+        )
 
     return final_output, steps

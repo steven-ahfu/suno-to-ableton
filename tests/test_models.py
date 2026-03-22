@@ -157,3 +157,4 @@ class TestMIDICleanupResult:
         assert r.tracks_removed == 0
         assert r.notes_quantized == 0
         assert r.tempo_set == 0.0
+        assert r.warnings == []

@@ -24,13 +24,20 @@ NUMBERED_STEM_RE = re.compile(r"^(\d+)\s+(.+)$")
 
 def _classify_stem_name(name: str) -> StemType:
     """Map a stem name like 'Drums' or 'Backing_Vocals' to a StemType."""
-    key = name.lower().strip()
-    if key in STEM_NAME_MAP:
-        return STEM_NAME_MAP[key]
-    # Try replacing spaces with underscores
-    key_underscore = key.replace(" ", "_")
-    if key_underscore in STEM_NAME_MAP:
-        return STEM_NAME_MAP[key_underscore]
+    candidates = [name.lower().strip()]
+
+    # MIDI exports often include the stem in parentheses, e.g. "Song (Drums)".
+    parenthetical = re.findall(r"\(([^()]+)\)", name)
+    for part in reversed(parenthetical):
+        candidates.append(part.lower().strip())
+
+    for key in candidates:
+        if key in STEM_NAME_MAP:
+            return STEM_NAME_MAP[key]
+        # Try replacing spaces with underscores
+        key_underscore = key.replace(" ", "_")
+        if key_underscore in STEM_NAME_MAP:
+            return STEM_NAME_MAP[key_underscore]
     return StemType.OTHER
 
 
@@ -51,6 +58,12 @@ def _probe_audio(path: Path) -> dict:
 
 def _sanitize_title(name: str) -> str:
     """Clean up a song title from filename."""
+    stem_type = _classify_stem_name(name)
+    if stem_type not in (StemType.OTHER, StemType.FULL_MIX):
+        match = re.search(r"^(.*?)\s*\(([^()]+)\)\s*$", name)
+        if match and _classify_stem_name(match.group(2)) == stem_type:
+            name = match.group(1)
+
     # Remove common suffixes
     for suffix in [" - remix", " - Remix", " remix", " Remix"]:
         if name.endswith(suffix):
@@ -155,6 +168,7 @@ def discover_project(source_dir: Path) -> ProjectInventory:
             discovered = DiscoveredFile(
                 path=file_path,
                 role=FileRole.MIDI,
+                stem_type=_classify_stem_name(stem),
                 stem_name=stem,
             )
             inventory.midi_files.append(discovered)
@@ -172,8 +186,9 @@ def discover_project(source_dir: Path) -> ProjectInventory:
             track_num = int(match.group(1))
             stem_name = match.group(2)
             audio_meta = _probe_audio(file_path)
+            inferred_stem_type = _classify_stem_name(stem_name)
 
-            if track_num == 0:
+            if track_num == 0 and inferred_stem_type in (StemType.OTHER, StemType.FULL_MIX):
                 # Track 0 = full mix
                 discovered = DiscoveredFile(
                     path=file_path,
@@ -187,12 +202,11 @@ def discover_project(source_dir: Path) -> ProjectInventory:
                 # Derive song title from track 0
                 inventory.song_title = _sanitize_title(stem_name)
             else:
-                # Numbered stems
-                stem_type = _classify_stem_name(stem_name)
+                # Numbered stems. Some exports are stem-only and zero-indexed.
                 discovered = DiscoveredFile(
                     path=file_path,
                     role=FileRole.AUDIO_STEM,
-                    stem_type=stem_type,
+                    stem_type=inferred_stem_type,
                     track_number=track_num,
                     stem_name=stem_name,
                     **audio_meta,
@@ -214,7 +228,9 @@ def discover_project(source_dir: Path) -> ProjectInventory:
             )
 
     # Sort stems by track number
-    inventory.stems.sort(key=lambda f: (f.track_number or 999, f.stem_name))
+    inventory.stems.sort(
+        key=lambda f: (f.track_number if f.track_number is not None else 999, f.stem_name)
+    )
 
     # Validate
     if not inventory.full_mix and not inventory.stems:

@@ -24,8 +24,8 @@ Automates all the tedious work between exporting from Suno and actually producin
 ### Prerequisites
 
 - **Python 3.11+** — [install guide](docs/install.md#step-1-install-python-311)
+- **uv** — [install guide](docs/install.md#step-3-install-uv)
 - **ffmpeg** on PATH — [install guide](docs/install.md#step-2-install-ffmpeg)
-- **pip** (bundled with Python) — [install guide](docs/install.md#step-3-install-pip)
 - **PyTorch** (only for stem separation) — [install guide](docs/install.md#stem-separation-cpu)
 
 > See **[Install](docs/install.md)** for full platform-specific installation instructions, optional extras, and dependency details.
@@ -35,8 +35,7 @@ Automates all the tedious work between exporting from Suno and actually producin
 ```bash
 git clone https://github.com/steven-ahfu/suno-to-ableton.git
 cd suno-to-ableton
-python3 -m venv .venv && source .venv/bin/activate
-pip install -e .
+uv sync
 ```
 
 For the TUI, stem separation, or GPU acceleration, see **[Install — Optional extras](docs/install.md#optional-extras)**.
@@ -74,13 +73,13 @@ my-song/
 
 ```bash
 # Read-only analysis
-suno-to-ableton analyze ~/suno-exports/my-song
+uv run suno-to-ableton analyze ~/suno-exports/my-song
 
 # Full processing pipeline
-suno-to-ableton process ~/suno-exports/my-song
+uv run suno-to-ableton process ~/suno-exports/my-song
 
 # Process + generate Ableton Live Set
-suno-to-ableton process ~/suno-exports/my-song --export-als
+uv run suno-to-ableton process ~/suno-exports/my-song --export-als
 ```
 
 > See **[CLI Usage](docs/usage-cli.md)** for the complete CLI reference, all flags, workflow examples, and advanced feature usage.
