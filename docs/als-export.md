@@ -40,12 +40,22 @@ Unused managed tracks are removed from the final export.
 
 Tempo is written using Ableton-style fixed precision such as `144.230769` instead of long Python float strings like `144.23076923076923`.
 
+## Ableton version targeting
+
+By default, exports target **Ableton Live 12**. To export for **Ableton Live 11**, use `--ableton-version 11`. Each version uses its own native template to ensure full compatibility — no XML downgrading is needed.
+
 ## Usage
 
 ### During processing
 
 ```bash
 uv run suno-to-ableton process /path/to/my-song --export-als
+```
+
+### For Ableton 11
+
+```bash
+uv run suno-to-ableton export-als /path/to/my-song --ableton-version 11
 ```
 
 ### From already-processed output
