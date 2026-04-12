@@ -43,6 +43,7 @@ class SunoPrepConfig(BaseModel):
     apply_features: bool = False  # global --apply for advanced features
     export_als: bool = False
     als_template: Optional[Path] = None  # path to Ableton .als template
+    ableton_version: int = 12  # target Ableton Live version (11 or 12)
 
     @property
     def resolved_output_dir(self) -> Path:
