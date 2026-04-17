@@ -70,7 +70,31 @@ _PREFERRED_MIDI_TRACK_BY_STEM: dict[StemType, str] = {
     StemType.OTHER: "MIDI (Song)",
 }
 
-_DEFAULT_TEMPLATE_NAME = "Ableton 12 Template.als"
+_DEFAULT_TEMPLATE_NAMES: dict[int, str] = {
+    11: "Ableton 11 Template.als",
+    12: "Ableton 12 Template.als",
+}
+
+# Version attributes for downgrading to Ableton 11
+_ABLETON_VERSION_ATTRS: dict[int, dict[str, str]] = {
+    11: {
+        "MinorVersion": "11.0_433",
+        "SchemaChangeCount": "6",
+        "Creator": "Ableton Live 11.0.12",
+    },
+    12: {
+        "MinorVersion": "12.0_12120",
+        "SchemaChangeCount": "4",
+        "Creator": "Ableton Live 12.1.11",
+    },
+}
+
+# Attributes that only exist in Ableton 12 tracks
+_ABLETON_12_TRACK_ATTRS = [
+    "SelectedToolPanel",
+    "SelectedTransformationName",
+    "SelectedGeneratorName",
+]
 
 _INLINE_AUDIO_CLIP_PROTOTYPE = """
 <AudioClip Id="24583" Time="0">
@@ -213,10 +237,12 @@ def _find_template(config: SunoPrepConfig) -> Path:
         return config.als_template
 
     _repo_root = Path(__file__).parent.parent.parent
+    version = getattr(config, "ableton_version", 12)
+    default_name = _DEFAULT_TEMPLATE_NAMES.get(version, _DEFAULT_TEMPLATE_NAMES[12])
 
     # Check common locations
     candidates = [
-        _repo_root / "templates" / _DEFAULT_TEMPLATE_NAME,
+        _repo_root / "templates" / default_name,
         config.source_dir / "Example.als",
         config.source_dir.parent / "Example.als",
         _repo_root / "Example.als",
@@ -229,6 +255,21 @@ def _find_template(config: SunoPrepConfig) -> Path:
         "Ableton template not found. Provide --als-template path or "
         "place a template .als in the templates/ directory."
     )
+
+
+def _downgrade_to_ableton_version(root: ET.Element, version: int) -> None:
+    """Rewrite the root <Ableton> attributes for the target Live version."""
+    attrs = _ABLETON_VERSION_ATTRS.get(version)
+    if attrs is None:
+        return
+    for key, value in attrs.items():
+        root.set(key, value)
+    if version < 12:
+        # Strip Ableton 12-only attributes from track elements
+        for track in root.iter():
+            for attr in _ABLETON_12_TRACK_ATTRS:
+                if attr in track.attrib:
+                    del track.attrib[attr]
 
 
 def _template_has_arrangement_clips(root: ET.Element) -> bool:
@@ -779,6 +820,11 @@ def export_als(
         xml_content = f.read().decode("utf-8")
 
     root = ET.fromstring(xml_content)
+
+    # Downgrade version attributes if targeting an older Ableton version
+    if config.ableton_version != 12:
+        _downgrade_to_ableton_version(root, config.ableton_version)
+
     liveset = root.find("LiveSet")
     tracks_el = liveset.find("Tracks")
 

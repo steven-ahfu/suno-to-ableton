@@ -124,6 +124,9 @@ def process(
     als_template: Optional[Path] = typer.Option(
         None, "--als-template", help="Path to Ableton .als template"
     ),
+    ableton_version: int = typer.Option(
+        12, "--ableton-version", help="Target Ableton Live version (11 or 12)"
+    ),
 ) -> None:
     """Run the full preprocessing pipeline."""
     config = SunoPrepConfig(
@@ -149,6 +152,7 @@ def process(
         apply_features=apply_features,
         export_als=export_als,
         als_template=als_template,
+        ableton_version=ableton_version,
     )
 
     console.print(f"[bold]Processing:[/bold] {config.source_dir}")
@@ -406,11 +410,15 @@ def export_als_cmd(
     als_template: Optional[Path] = typer.Option(
         None, "--als-template", help="Path to Ableton .als template"
     ),
+    ableton_version: int = typer.Option(
+        12, "--ableton-version", help="Target Ableton Live version (11 or 12)"
+    ),
 ) -> None:
     """Generate an Ableton Live Set from processed outputs (experimental)."""
     from .features.export_als import run_export_als
 
     config = _make_config(source_dir, output_dir, als_template=als_template)
+    config.ableton_version = ableton_version
     config.ensure_output_dirs()
 
     # Load manifest
