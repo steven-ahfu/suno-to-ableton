@@ -397,7 +397,7 @@ def _update_reference_audio_clips(
     output_path: Path,
     bpm: float,
     clip_id_start: int,
-    clip_beat_seconds: list[float] | None = None,
+    clip_beat_pairs: list[tuple[float, float]] | None = None,
 ) -> int:
     """Replace reference audio clips with rebuilt clips for processed stems."""
     tracks_created = 0
@@ -424,7 +424,7 @@ def _update_reference_audio_clips(
             output_path=output_path,
             bpm=bpm,
             clip_id=clip_id_counter,
-            clip_beat_seconds=clip_beat_seconds,
+            clip_beat_pairs=clip_beat_pairs,
         )
         clip_id_counter += 1
         _replace_events(events_el, clip_el)
@@ -448,14 +448,12 @@ def _rebuild_warp_markers(
     clip_el: ET.Element,
     duration_seconds: float,
     end_beats: float,
-    clip_beat_seconds: list[float] | None = None,
+    clip_beat_pairs: list[tuple[float, float]] | None = None,
 ) -> None:
     """Replace prototype warp markers.
 
-    If `clip_beat_seconds` is provided (a list of beat positions in clip-seconds,
-    starting at 0 for the downbeat), write one marker per beat — anchoring each
-    detected beat to its integer beat-time, so small BPM errors don't accumulate.
-    Otherwise fall back to the minimal start/end pair.
+    `clip_beat_pairs` is a list of (sec_in_clip, beat_in_clip) anchors.
+    Falls back to a minimal start/end pair if not provided.
     """
     markers = clip_el.find("./WarpMarkers")
     if markers is None:
@@ -464,20 +462,36 @@ def _rebuild_warp_markers(
         markers.remove(child)
 
     pairs: list[tuple[float, float]] = []
-    if clip_beat_seconds and len(clip_beat_seconds) >= 2:
-        seen = set()
-        for i, sec in enumerate(clip_beat_seconds):
-            if sec < 0 or sec > duration_seconds:
+    if clip_beat_pairs and len(clip_beat_pairs) >= 2:
+        seen_secs: set[float] = set()
+        seen_beats: set[float] = set()
+        for sec, beat in clip_beat_pairs:
+            if sec < 0 or sec > duration_seconds + 1e-3:
                 continue
-            key = round(sec, 6)
-            if key in seen:
+            sec_key = round(float(sec), 6)
+            beat_key = round(float(beat), 6)
+            if sec_key in seen_secs or beat_key in seen_beats:
                 continue
-            seen.add(key)
-            pairs.append((float(sec), float(i)))
+            seen_secs.add(sec_key)
+            seen_beats.add(beat_key)
+            pairs.append((float(sec), float(beat)))
+        # Ensure (0, 0) anchor at the start so bar 1.1.1 = clip start.
         if pairs and pairs[0][0] > 1e-6:
             pairs.insert(0, (0.0, 0.0))
+        # End marker — extrapolate beat position from the last pair.
         if pairs and pairs[-1][0] < duration_seconds - 1e-6:
-            pairs.append((duration_seconds, end_beats))
+            last_sec, last_beat = pairs[-1]
+            if last_sec > 0:
+                # Maintain the last segment's beat-per-second rate.
+                rate = last_beat / last_sec if last_sec > 1e-9 else 0
+                if len(pairs) >= 2:
+                    prev_sec, prev_beat = pairs[-2]
+                    if last_sec > prev_sec:
+                        rate = (last_beat - prev_beat) / (last_sec - prev_sec)
+                final_beat = last_beat + rate * (duration_seconds - last_sec)
+            else:
+                final_beat = end_beats
+            pairs.append((duration_seconds, max(final_beat, last_beat + 1e-3)))
     if not pairs:
         pairs = [(0.0, 0.0), (duration_seconds, end_beats)]
 
@@ -496,7 +510,7 @@ def _build_audio_clip_from_prototype(
     output_path: Path,
     bpm: float,
     clip_id: int,
-    clip_beat_seconds: list[float] | None = None,
+    clip_beat_pairs: list[tuple[float, float]] | None = None,
 ) -> ET.Element:
     """Clone an Ableton-authored audio clip and retarget it to a stem file."""
     stem_path = Path(processed_file.output_path)
@@ -536,7 +550,7 @@ def _build_audio_clip_from_prototype(
     file_ref = clip_el.find("./SampleRef/FileRef")
     if file_ref is not None:
         _update_file_ref(file_ref, output_path, stem_path)
-    _rebuild_warp_markers(clip_el, duration_seconds, end_beats, clip_beat_seconds)
+    _rebuild_warp_markers(clip_el, duration_seconds, end_beats, clip_beat_pairs)
     _set_child_value(clip_el, "./MarkersGenerated", "false")
     _set_child_value(clip_el, "./IsSongTempoLeader", "false")
     _set_child_value(clip_el, "./AutoWarpPending", "false")
@@ -974,16 +988,43 @@ def export_als(
     bpm = manifest.bpm or 120.0
     result.bpm_set = bpm
 
-    # Per-beat warp marker positions (in trimmed-clip seconds, anchored at the downbeat).
-    clip_beat_seconds: list[float] | None = None
+    # Per-beat warp marker pairs: list of (sec_in_clip, beat_in_clip).
+    # The exact mapping depends on align_mode:
+    #   "downbeat" — first detected beat lands at clip-beat 0 (bar 1.1.1).
+    #   "silence"  — bar 1.1.1 is the start of audio; the drums' first downbeat
+    #                snaps to the nearest whole bar so the grid still locks to
+    #                the kick. Intro audio (pad/vocals before drums) is preserved.
+    #   "none"     — natural beat positions; no remapping.
+    clip_beat_pairs: list[tuple[float, float]] | None = None
     if config.per_beat_warp_markers and manifest.beat_times:
-        offset = manifest.offset_seconds or 0.0
-        if config.align_downbeat:
-            shifted = [t - offset for t in manifest.beat_times if t >= offset - 1e-3]
-        else:
-            shifted = list(manifest.beat_times)
-        if len(shifted) >= 2:
-            clip_beat_seconds = [max(0.0, float(s)) for s in shifted]
+        trim_offset = manifest.offset_seconds or 0.0
+        beat_times = list(manifest.beat_times)
+        mode = config.align_mode if config.align_downbeat else "none"
+        if mode == "downbeat":
+            shifted = [t - trim_offset for t in beat_times if t >= trim_offset - 1e-3]
+            if len(shifted) >= 2:
+                clip_beat_pairs = [(max(0.0, float(s)), float(i)) for i, s in enumerate(shifted)]
+        elif mode == "silence":
+            # Beats expressed in trimmed-clip seconds (after silence trim).
+            in_clip = [t - trim_offset for t in beat_times if t >= trim_offset - 1e-3]
+            if len(in_clip) >= 2:
+                first_sec = max(0.0, in_clip[0])
+                # Snap the first detected beat to the nearest whole bar so the
+                # drum kick lands on a bar boundary, not mid-bar.
+                raw_beat = first_sec * bpm / 60.0
+                target_first = round(raw_beat / 4.0) * 4
+                if target_first <= 0:
+                    # Drums hit (almost) at clip start — use natural alignment.
+                    target_first = 0
+                pairs: list[tuple[float, float]] = [(0.0, 0.0)] if target_first > 0 else []
+                for j, sec in enumerate(in_clip):
+                    pairs.append((max(0.0, float(sec)), float(target_first + j)))
+                clip_beat_pairs = pairs
+        else:  # "none"
+            in_clip = beat_times
+            if len(in_clip) >= 2:
+                # Each beat sits at its natural beat-time = sec * bpm / 60
+                clip_beat_pairs = [(float(t), float(t * bpm / 60.0)) for t in in_clip]
     tempo_el = liveset.find(".//Tempo/Manual")
     if tempo_el is not None:
         tempo_el.set("Value", _format_ableton_float(bpm))
@@ -1046,7 +1087,7 @@ def export_als(
             output_path=output_path,
             bpm=bpm,
             clip_id_start=clip_id_counter,
-            clip_beat_seconds=clip_beat_seconds,
+            clip_beat_pairs=clip_beat_pairs,
         )
         clip_id_counter += result.tracks_created
         result.midi_tracks_created = _update_reference_midi_clips(
@@ -1111,7 +1152,7 @@ def export_als(
             output_path=output_path,
             bpm=bpm,
             clip_id=clip_id_counter,
-            clip_beat_seconds=clip_beat_seconds,
+            clip_beat_pairs=clip_beat_pairs,
         )
         clip_id_counter += 1
         events_el.append(clip_el)

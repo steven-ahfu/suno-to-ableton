@@ -102,6 +102,8 @@ def run_pipeline(
         manifest.bpm = bpm_result.bpm
         manifest.bpm_confidence = bpm_result.confidence
         manifest.beat_times = list(bpm_result.beat_times)
+        manifest.leading_silence = float(bpm_result.leading_silence)
+        manifest.downbeat_time = float(bpm_result.downbeat_time)
         _emit(on_progress, "bpm", StepStatus.DONE)
     except Exception as e:
         msg = f"BPM detection failed: {e}"
@@ -124,7 +126,53 @@ def run_pipeline(
         console.print("  [yellow]Skipping alignment (no BPM data)[/yellow]")
         _emit(on_progress, "alignment", StepStatus.SKIPPED, "No BPM data")
 
-    offset = alignment.offset_seconds if alignment else 0.0
+    # Compute trim offset based on align_mode. Distinguishes:
+    #   "silence"  → trim only leading silence (preserves intro audio that comes
+    #                before the drums; default and recommended for Suno songs).
+    #   "downbeat" → trim to first detected downbeat (legacy behavior; discards
+    #                anything before the drums).
+    #   "none"     → no trim.
+    if not config.align_downbeat:
+        trim_offset = 0.0
+    elif config.align_mode == "downbeat":
+        trim_offset = float(manifest.downbeat_time or 0.0)
+    elif config.align_mode == "none":
+        trim_offset = 0.0
+    else:  # "silence"
+        # Global min leading silence across ALL stems — preserves the earliest
+        # audio in any stem (e.g. a Strings intro that starts before drums).
+        # The single-stem leading_silence in BPMResult only reflects the rhythm
+        # source (drums), which can be 10+ seconds late on Suno songs.
+        try:
+            import librosa
+            min_lead = None
+            scan_paths = []
+            for s in inventory.stems:
+                scan_paths.append(s.path)
+            if inventory.full_mix:
+                scan_paths.append(inventory.full_mix.path)
+            for f in scan_paths:
+                y, sr = librosa.load(str(f), sr=None, mono=True)
+                rms = librosa.feature.rms(y=y, hop_length=512)[0]
+                peak = float(rms.max()) if len(rms) else 0.0
+                if peak == 0:
+                    continue
+                thr = peak * 0.01
+                for i, v in enumerate(rms):
+                    if v >= thr:
+                        t = librosa.frames_to_time(i, sr=sr, hop_length=512)
+                        if min_lead is None or t < min_lead:
+                            min_lead = float(t)
+                        break
+            trim_offset = float(min_lead) if min_lead is not None else float(manifest.leading_silence or 0.0)
+        except Exception:
+            trim_offset = float(manifest.leading_silence or 0.0)
+    # Update manifest with the offset that was actually applied so export_als
+    # and reports reflect the true trim, not the detected downbeat.
+    manifest.offset_seconds = trim_offset
+    if config.target_sr:
+        manifest.offset_samples = int(round(trim_offset * config.target_sr))
+    offset = trim_offset
 
     # Step 5: Audio processing
     _emit(on_progress, "audio", StepStatus.RUNNING)

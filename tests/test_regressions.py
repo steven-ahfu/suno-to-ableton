@@ -510,3 +510,106 @@ class TestEndToEnd:
             if f'<PointeeId Value="{target_id}"' in env.group(0):
                 for v in re.findall(r'<FloatEvent[^/]*?Value="([\d.]+)"', env.group(0)):
                     assert abs(float(v) - 132.0) < 0.01
+
+
+# ---------- 14. align_mode="silence" preserves intro audio ----------
+
+
+class TestAlignModeSilence:
+    """Pin the Nanjing-intro-cut-off bug: when a stem (e.g. Strings) has audio
+    before the drums, default align_mode="silence" must preserve it. The drums'
+    first beat is mapped to the nearest whole-bar boundary via warp markers."""
+
+    @patch("suno_to_ableton.features.export_als._get_audio_info", return_value=(48000 * 60, 48000))
+    def test_silence_mode_anchors_clip_start_at_zero(self, _mock, tmp_path: Path):
+        cfg = SunoPrepConfig(source_dir=tmp_path, align_mode="silence")
+        # Simulate: drums first beat detected at 14.8s (in original audio)
+        # leading_silence (after global trim) = 0.2s → clip-sec of first beat = 14.6s
+        # At 132 BPM that's 32.1 beats → snap to bar 9.1.1 = beat 32.
+        beat_times = [14.8 + i * 60.0 / 132.0 for i in range(120)]
+        manifest = ProcessingManifest(
+            song_title="test",
+            bpm=132.0,
+            offset_seconds=0.2,
+            beat_times=beat_times,
+            stems=[ProcessedFile(
+                output_path=_touch_wav(tmp_path / "processed" / "stems" / "00_drums.wav"),
+                stem_type=StemType.DRUMS,
+            )],
+        )
+        result = export_als(manifest, cfg)
+        for clip_xml in _audio_clips_with_stems(_als_xml(result.output_path)):
+            wm = re.search(r"<WarpMarkers>.*?</WarpMarkers>", clip_xml, re.DOTALL)
+            markers = re.findall(
+                r'<WarpMarker[^/]*?SecTime="([\d.]+)"[^/]*?BeatTime="([-\d.]+)"',
+                wm.group(0),
+            )
+            secs = [float(s) for s, _ in markers]
+            beats = [float(b) for _, b in markers]
+            # First marker must anchor (0, 0) so clip-sec 0 = bar 1.1.1
+            assert abs(secs[0]) < 1e-6, f"first marker SecTime should be 0, got {secs[0]}"
+            assert abs(beats[0]) < 1e-6, f"first marker BeatTime should be 0, got {beats[0]}"
+            # Second marker (drums first beat) must land on a whole bar (multiple of 4)
+            assert beats[1] > 0
+            assert beats[1] % 4 == 0, f"first detected beat must snap to whole bar, got beat {beats[1]}"
+
+    @patch("suno_to_ableton.features.export_als._get_audio_info", return_value=(48000 * 60, 48000))
+    def test_downbeat_mode_puts_first_beat_at_clip_zero(self, _mock, tmp_path: Path):
+        """Legacy mode: first detected beat IS clip-beat 0 (bar 1.1.1)."""
+        cfg = SunoPrepConfig(source_dir=tmp_path, align_mode="downbeat")
+        beat_times = [i * 60.0 / 132.0 for i in range(120)]  # already shifted to 0
+        manifest = ProcessingManifest(
+            song_title="test",
+            bpm=132.0,
+            offset_seconds=0.0,
+            beat_times=beat_times,
+            stems=[ProcessedFile(
+                output_path=_touch_wav(tmp_path / "processed" / "stems" / "00_drums.wav"),
+                stem_type=StemType.DRUMS,
+            )],
+        )
+        result = export_als(manifest, cfg)
+        for clip_xml in _audio_clips_with_stems(_als_xml(result.output_path)):
+            wm = re.search(r"<WarpMarkers>.*?</WarpMarkers>", clip_xml, re.DOTALL)
+            markers = re.findall(
+                r'<WarpMarker[^/]*?SecTime="([\d.]+)"[^/]*?BeatTime="([-\d.]+)"',
+                wm.group(0),
+            )
+            secs = [float(s) for s, _ in markers]
+            beats = [float(b) for _, b in markers]
+            # In downbeat mode, first beat at clip-sec 0 maps to clip-beat 0
+            assert abs(secs[0]) < 1e-6
+            assert abs(beats[0]) < 1e-6
+            # Subsequent beats are integer indices 1, 2, 3, ...
+            assert beats[1] == 1.0
+
+    def test_pipeline_uses_global_min_leading_silence(self, tmp_path: Path):
+        """Pipeline should pick the EARLIEST audio across all stems (not just
+        the rhythm source's silence) so an intro stem isn't trimmed."""
+        # Set up a fake project: one stem with audio at 0.2s, another at 14s
+        intro_stem = tmp_path / "0 Strings.wav"
+        late_stem = tmp_path / "1 Drums.wav"
+        sr = 48000
+        # Strings: silence 0.2s, then a tone
+        s1 = np.zeros(sr * 4, dtype=np.float32)
+        s1[int(sr * 0.2):] = np.sin(2 * np.pi * 220 * np.arange(len(s1) - int(sr * 0.2)) / sr) * 0.8
+        sf.write(intro_stem, np.column_stack([s1, s1]), sr, subtype="FLOAT")
+        # Drums: silence 2.0s (within the 4s file)
+        s2 = np.zeros(sr * 4, dtype=np.float32)
+        s2[int(sr * 2.0):] = np.sin(2 * np.pi * 80 * np.arange(len(s2) - int(sr * 2.0)) / sr) * 0.9
+        sf.write(late_stem, np.column_stack([s2, s2]), sr, subtype="FLOAT")
+
+        # Replicate the pipeline scan: min RMS-1% across the two stems
+        import librosa
+        mins = []
+        for f in [intro_stem, late_stem]:
+            y, _sr = librosa.load(str(f), sr=None, mono=True)
+            rms = librosa.feature.rms(y=y, hop_length=512)[0]
+            peak = float(rms.max())
+            for i, v in enumerate(rms):
+                if v >= peak * 0.01:
+                    mins.append(librosa.frames_to_time(i, sr=_sr, hop_length=512))
+                    break
+        global_min = min(mins)
+        # Strings starts at 0.2s, drums at 2.0s → min must be ~0.2s, not 2.0s
+        assert global_min < 0.5, f"global min should be ~0.2 (strings), got {global_min}"

@@ -134,7 +134,10 @@ def process(
         False, "--snap-bpm", help="Round detected BPM to nearest integer (Suno uses whole-number BPMs)"
     ),
     align_downbeat: bool = typer.Option(
-        True, "--align-downbeat/--no-align-downbeat", help="Trim leading silence so beat 1 lands on bar 1.1.1"
+        True, "--align-downbeat/--no-align-downbeat", help="Master switch for alignment (off = no trim)"
+    ),
+    align_mode: str = typer.Option(
+        "silence", "--align", help="Alignment mode: 'silence' preserves intro audio (default), 'downbeat' trims to first kick (loses intro), 'none' disables"
     ),
     beat_offset: int = typer.Option(
         0, "--beat-offset", help="Nudge downbeat by N beats (e.g. -1, 1) when phase detection lands on the wrong beat"
@@ -174,6 +177,7 @@ def process(
         bpm_override=bpm,
         snap_bpm=snap_bpm,
         align_downbeat=align_downbeat,
+        align_mode=align_mode,
         beat_offset=beat_offset,
         detect_downbeat=detect_downbeat,
         per_beat_warp_markers=per_beat_warp_markers,
