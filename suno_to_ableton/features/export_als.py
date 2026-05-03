@@ -1005,20 +1005,32 @@ def export_als(
             if len(shifted) >= 2:
                 clip_beat_pairs = [(max(0.0, float(s)), float(i)) for i, s in enumerate(shifted)]
         elif mode == "silence":
-            # Beats expressed in trimmed-clip seconds (after silence trim).
-            in_clip = [t - trim_offset for t in beat_times if t >= trim_offset - 1e-3]
-            if len(in_clip) >= 2:
-                first_sec = max(0.0, in_clip[0])
-                # Snap the first detected beat to the nearest whole bar so the
-                # drum kick lands on a bar boundary, not mid-bar.
-                raw_beat = first_sec * bpm / 60.0
-                target_first = round(raw_beat / 4.0) * 4
-                if target_first <= 0:
-                    # Drums hit (almost) at clip start — use natural alignment.
-                    target_first = 0
-                pairs: list[tuple[float, float]] = [(0.0, 0.0)] if target_first > 0 else []
-                for j, sec in enumerate(in_clip):
-                    pairs.append((max(0.0, float(sec)), float(target_first + j)))
+            # Snap the *detected downbeat* (not the first detected beat) to the
+            # nearest whole bar. Phase voting may have placed the downbeat
+            # several beats into the beat_times list — earlier beats are pickup
+            # beats that should land BEFORE the downbeat in the warp grid.
+            in_clip_with_idx = [
+                (t - trim_offset, i) for i, t in enumerate(beat_times) if t >= trim_offset - 1e-3
+            ]
+            if len(in_clip_with_idx) >= 2:
+                downbeat_in_clip = max(0.0, float(manifest.downbeat_time or beat_times[0]) - trim_offset)
+                # Find which index in beat_times corresponds to the downbeat.
+                downbeat_idx_in_list = 0
+                best_dist = float("inf")
+                for sec_in_clip, orig_idx in in_clip_with_idx:
+                    d = abs(sec_in_clip - downbeat_in_clip)
+                    if d < best_dist:
+                        best_dist = d
+                        downbeat_idx_in_list = orig_idx
+                # Snap the downbeat to the nearest whole bar.
+                raw_beat = downbeat_in_clip * bpm / 60.0
+                target_downbeat = round(raw_beat / 4.0) * 4
+                if target_downbeat <= 0:
+                    target_downbeat = 0
+                pairs: list[tuple[float, float]] = [(0.0, 0.0)] if target_downbeat > 0 else []
+                for sec_in_clip, orig_idx in in_clip_with_idx:
+                    beat_pos = target_downbeat + (orig_idx - downbeat_idx_in_list)
+                    pairs.append((max(0.0, float(sec_in_clip)), float(beat_pos)))
                 clip_beat_pairs = pairs
         else:  # "none"
             in_clip = beat_times

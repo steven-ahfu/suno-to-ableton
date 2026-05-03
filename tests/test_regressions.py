@@ -521,16 +521,20 @@ class TestAlignModeSilence:
     first beat is mapped to the nearest whole-bar boundary via warp markers."""
 
     @patch("suno_to_ableton.features.export_als._get_audio_info", return_value=(48000 * 60, 48000))
-    def test_silence_mode_anchors_clip_start_at_zero(self, _mock, tmp_path: Path):
+    def test_silence_mode_snaps_detected_downbeat_not_first_beat(self, _mock, tmp_path: Path):
+        """Phase voting may pick a downbeat several beats into beat_times. The
+        warp grid must anchor on that downbeat (snap it to a whole bar), not on
+        the first detected beat — otherwise drums land on a pickup beat."""
         cfg = SunoPrepConfig(source_dir=tmp_path, align_mode="silence")
-        # Simulate: drums first beat detected at 14.8s (in original audio)
-        # leading_silence (after global trim) = 0.2s → clip-sec of first beat = 14.6s
-        # At 132 BPM that's 32.1 beats → snap to bar 9.1.1 = beat 32.
+        # Simulate Nanjing: librosa finds beats starting at 14.8s; phase voting
+        # determines beats[3] = 16.6s is the true downbeat (4-bar phase=3).
         beat_times = [14.8 + i * 60.0 / 132.0 for i in range(120)]
+        downbeat_time = beat_times[3]  # 16.16s — voting result
         manifest = ProcessingManifest(
             song_title="test",
             bpm=132.0,
             offset_seconds=0.2,
+            downbeat_time=downbeat_time,
             beat_times=beat_times,
             stems=[ProcessedFile(
                 output_path=_touch_wav(tmp_path / "processed" / "stems" / "00_drums.wav"),
@@ -538,20 +542,29 @@ class TestAlignModeSilence:
             )],
         )
         result = export_als(manifest, cfg)
+        # downbeat_in_clip = 16.16 - 0.2 = 15.96
+        # raw_beat = 15.96 * 132/60 = 35.11 → snap to 36 (bar 10.1.1)
+        expected_downbeat_beat = 36.0
+        downbeat_in_clip = downbeat_time - 0.2
         for clip_xml in _audio_clips_with_stems(_als_xml(result.output_path)):
             wm = re.search(r"<WarpMarkers>.*?</WarpMarkers>", clip_xml, re.DOTALL)
             markers = re.findall(
                 r'<WarpMarker[^/]*?SecTime="([\d.]+)"[^/]*?BeatTime="([-\d.]+)"',
                 wm.group(0),
             )
-            secs = [float(s) for s, _ in markers]
-            beats = [float(b) for _, b in markers]
-            # First marker must anchor (0, 0) so clip-sec 0 = bar 1.1.1
-            assert abs(secs[0]) < 1e-6, f"first marker SecTime should be 0, got {secs[0]}"
-            assert abs(beats[0]) < 1e-6, f"first marker BeatTime should be 0, got {beats[0]}"
-            # Second marker (drums first beat) must land on a whole bar (multiple of 4)
-            assert beats[1] > 0
-            assert beats[1] % 4 == 0, f"first detected beat must snap to whole bar, got beat {beats[1]}"
+            # First marker must anchor (0, 0)
+            assert abs(float(markers[0][0])) < 1e-6
+            assert abs(float(markers[0][1])) < 1e-6
+            # The downbeat (clip-sec ≈ 15.96) must land on a whole bar
+            for s, b in markers:
+                if abs(float(s) - downbeat_in_clip) < 0.05:
+                    assert float(b) == expected_downbeat_beat, (
+                        f"downbeat at clip-sec {s} should map to beat {expected_downbeat_beat}, got {b}"
+                    )
+                    assert float(b) % 4 == 0, "downbeat must land on a whole bar"
+                    break
+            else:
+                raise AssertionError(f"no marker found near downbeat sec {downbeat_in_clip}")
 
     @patch("suno_to_ableton.features.export_als._get_audio_info", return_value=(48000 * 60, 48000))
     def test_downbeat_mode_puts_first_beat_at_clip_zero(self, _mock, tmp_path: Path):
