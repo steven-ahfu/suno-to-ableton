@@ -73,44 +73,64 @@ def _compute_confidence(
     return min(max(confidence, 0.0), 1.0)
 
 
-def analyze_bpm(audio_path: Path) -> BPMResult:
-    """Run full BPM analysis on an audio file."""
-    # Load at native sample rate, mono
-    y, sr = librosa.load(str(audio_path), sr=None, mono=True)
+def _detect_downbeat_phase(
+    y: np.ndarray,
+    sr: int,
+    beat_frames: np.ndarray,
+    beats_per_bar: int = 4,
+    hop_length: int = 512,
+) -> int:
+    """Vote across {0..beats_per_bar-1} for the phase whose beats carry the most kick energy.
 
+    Suno (and most pop/dance) puts a kick on beat 1 of every bar. We compute a low-band
+    onset envelope, then for each candidate phase p we sum the envelope value at every
+    beat at indices [p, p+N, p+2N, ...]. The phase with maximum total wins.
+    """
+    if len(beat_frames) < beats_per_bar:
+        return 0
+    low = librosa.effects.preemphasis(y, coef=-0.97)
+    low_onset = librosa.onset.onset_strength(
+        y=low, sr=sr, hop_length=hop_length, fmax=200, n_mels=32
+    )
+    n_frames = len(low_onset)
+    scores = []
+    for phase in range(beats_per_bar):
+        idxs = beat_frames[phase::beats_per_bar]
+        idxs = idxs[idxs < n_frames]
+        scores.append(float(low_onset[idxs].sum()) if len(idxs) else 0.0)
+    return int(np.argmax(scores))
+
+
+def analyze_bpm(audio_path: Path, detect_downbeat: bool = True) -> BPMResult:
+    """Run full BPM analysis on an audio file."""
+    y, sr = librosa.load(str(audio_path), sr=None, mono=True)
     hop_length = 512
 
-    # Onset strength envelope
     onset_envelope = librosa.onset.onset_strength(y=y, sr=sr, hop_length=hop_length)
-
-    # Global tempo estimate
     tempo = librosa.feature.tempo(
         onset_envelope=onset_envelope, sr=sr, hop_length=hop_length, start_bpm=120
     )
     bpm = float(tempo[0]) if hasattr(tempo, "__len__") else float(tempo)
 
-    # Beat tracking
     _, beat_frames = librosa.beat.beat_track(
         onset_envelope=onset_envelope, sr=sr, hop_length=hop_length, bpm=bpm
     )
     beat_times = librosa.frames_to_time(beat_frames, sr=sr, hop_length=hop_length)
 
-    # Onset detection
     onset_frames = librosa.onset.onset_detect(
         onset_envelope=onset_envelope, sr=sr, hop_length=hop_length, backtrack=True
     )
     onset_times = librosa.frames_to_time(onset_frames, sr=sr, hop_length=hop_length)
 
-    # Leading silence
     leading_silence = _detect_leading_silence(y, sr, hop_length)
-
-    # Confidence
     confidence = _compute_confidence(onset_envelope, sr, hop_length, bpm)
 
-    # First downbeat
-    downbeat_time = float(beat_times[0]) if len(beat_times) > 0 else 0.0
+    if detect_downbeat and len(beat_frames) > 0:
+        phase = _detect_downbeat_phase(y, sr, np.asarray(beat_frames), 4, hop_length)
+        downbeat_time = float(beat_times[phase]) if phase < len(beat_times) else float(beat_times[0])
+    else:
+        downbeat_time = float(beat_times[0]) if len(beat_times) > 0 else 0.0
 
-    # Clamp BPM to Ableton's valid range (20–999)
     bpm = max(20.0, min(999.0, bpm))
 
     return BPMResult(
@@ -123,9 +143,10 @@ def analyze_bpm(audio_path: Path) -> BPMResult:
     )
 
 
-def analyze_bpm_from_inventory(inventory: ProjectInventory) -> BPMResult:
-    """Analyze BPM using the best available rhythm source."""
+def analyze_bpm_from_inventory(
+    inventory: ProjectInventory, detect_downbeat: bool = True
+) -> BPMResult:
     path = _select_rhythm_source(inventory)
     if path is None:
         raise ValueError("No audio files available for BPM analysis")
-    return analyze_bpm(path)
+    return analyze_bpm(path, detect_downbeat=detect_downbeat)

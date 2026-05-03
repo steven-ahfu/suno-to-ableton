@@ -228,6 +228,7 @@ class ProcessingManifest(BaseModel):
     offset_seconds: Optional[float] = None
     offset_samples: Optional[int] = None
     samples_per_beat: Optional[float] = None
+    beat_times: list[float] = Field(default_factory=list)
     target_sr: int = 48000
     stems: list[ProcessedFile] = Field(default_factory=list)
     midi_files: list[ProcessedFile] = Field(default_factory=list)

@@ -79,10 +79,29 @@ def run_pipeline(
     console.print("\n[bold]Step 3:[/bold] Detecting BPM...")
     bpm_result: BPMResult | None = None
     try:
-        bpm_result = analyze_bpm_from_inventory(inventory)
+        bpm_result = analyze_bpm_from_inventory(
+            inventory, detect_downbeat=config.detect_downbeat
+        )
+        if config.beat_offset:
+            beat_seconds = 60.0 / bpm_result.bpm
+            bpm_result.downbeat_time = max(
+                0.0, bpm_result.downbeat_time + config.beat_offset * beat_seconds
+            )
+            console.print(
+                f"  [yellow]Beat offset:[/yellow] downbeat shifted by {config.beat_offset} beats → {bpm_result.downbeat_time:.3f}s"
+            )
+        if config.bpm_override is not None:
+            console.print(f"  [yellow]BPM override:[/yellow] {bpm_result.bpm:.3f} → {config.bpm_override}")
+            bpm_result.bpm = float(config.bpm_override)
+        elif config.snap_bpm:
+            snapped = float(round(bpm_result.bpm))
+            if snapped != bpm_result.bpm:
+                console.print(f"  [yellow]BPM snap:[/yellow] {bpm_result.bpm:.3f} → {snapped}")
+            bpm_result.bpm = snapped
         print_bpm_result(bpm_result)
         manifest.bpm = bpm_result.bpm
         manifest.bpm_confidence = bpm_result.confidence
+        manifest.beat_times = list(bpm_result.beat_times)
         _emit(on_progress, "bpm", StepStatus.DONE)
     except Exception as e:
         msg = f"BPM detection failed: {e}"

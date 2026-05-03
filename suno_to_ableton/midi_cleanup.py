@@ -346,10 +346,12 @@ def cleanup_midi(
     # Step 3: Remove duplicates
     result.notes_removed_duplicate = _remove_duplicate_notes(midi)
 
-    # Preserve source timing. The detected alignment offset is still reported in
-    # pipeline reports, but cleanup no longer shifts or quantizes note data.
-    result.offset_applied = 0.0
-    result.notes_removed_pre_offset = 0
+    if config.align_downbeat and offset_seconds > 0:
+        result.notes_removed_pre_offset = _apply_offset(midi, offset_seconds)
+        result.offset_applied = offset_seconds
+    else:
+        result.offset_applied = 0.0
+        result.notes_removed_pre_offset = 0
     result.tempo_set = bpm
     result.notes_quantized = 0
 

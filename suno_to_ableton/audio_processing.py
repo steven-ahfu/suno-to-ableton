@@ -152,12 +152,15 @@ def process_audio_file(
             )
         return final_output, steps
 
-    # Normalize if needed, but do not destructively trim the source files.
     needs_norm = needs_conversion(file, config)
+    do_trim = config.align_downbeat and offset_seconds > 0
 
-    if needs_norm:
+    if needs_norm or do_trim:
         final_output.parent.mkdir(parents=True, exist_ok=True)
-        cmd = ["ffmpeg", "-y", "-i", str(file.path)]
+        cmd = ["ffmpeg", "-y"]
+        if do_trim:
+            cmd.extend(["-ss", f"{offset_seconds:.6f}"])
+        cmd.extend(["-i", str(file.path)])
         cmd.extend([
             "-ar", str(config.target_sr),
             "-ac", str(config.target_channels),
@@ -171,13 +174,14 @@ def process_audio_file(
 
         if needs_norm:
             steps.append(f"normalized: sr={config.target_sr}, ch={config.target_channels}")
+        if do_trim:
+            steps.append(f"trimmed leading silence: {offset_seconds:.4f}s")
     else:
-        # Just copy
         final_output.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(file.path, final_output)
         steps.append("copied (no processing needed)")
 
-    if offset_seconds > 0:
+    if offset_seconds > 0 and not do_trim:
         steps.append(
             f"source timing preserved (detected alignment offset={offset_seconds:.4f}s)"
         )

@@ -127,6 +127,24 @@ def process(
     ableton_version: int = typer.Option(
         12, "--ableton-version", help="Target Ableton Live version (11 or 12)"
     ),
+    bpm: Optional[float] = typer.Option(
+        None, "--bpm", help="Manual BPM override (bypasses detection)"
+    ),
+    snap_bpm: bool = typer.Option(
+        False, "--snap-bpm", help="Round detected BPM to nearest integer (Suno uses whole-number BPMs)"
+    ),
+    align_downbeat: bool = typer.Option(
+        True, "--align-downbeat/--no-align-downbeat", help="Trim leading silence so beat 1 lands on bar 1.1.1"
+    ),
+    beat_offset: int = typer.Option(
+        0, "--beat-offset", help="Nudge downbeat by N beats (e.g. -1, 1) when phase detection lands on the wrong beat"
+    ),
+    detect_downbeat: bool = typer.Option(
+        True, "--detect-downbeat/--no-detect-downbeat", help="Use kick-energy bar voting to find the true beat 1 (vs first detected beat)"
+    ),
+    per_beat_warp_markers: bool = typer.Option(
+        True, "--per-beat-warp/--no-per-beat-warp", help="Write a warp marker per detected beat (resilient to BPM error and tempo drift)"
+    ),
 ) -> None:
     """Run the full preprocessing pipeline."""
     config = SunoPrepConfig(
@@ -153,6 +171,12 @@ def process(
         export_als=export_als,
         als_template=als_template,
         ableton_version=ableton_version,
+        bpm_override=bpm,
+        snap_bpm=snap_bpm,
+        align_downbeat=align_downbeat,
+        beat_offset=beat_offset,
+        detect_downbeat=detect_downbeat,
+        per_beat_warp_markers=per_beat_warp_markers,
     )
 
     console.print(f"[bold]Processing:[/bold] {config.source_dir}")
