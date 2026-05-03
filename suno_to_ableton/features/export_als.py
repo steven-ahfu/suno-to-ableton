@@ -510,12 +510,13 @@ def _build_audio_clip_from_prototype(
     clip_el.set("Time", "0")
     _set_child_value(clip_el, "./CurrentStart", "0")
     _set_child_value(clip_el, "./CurrentEnd", str(end_beats))
+    # When IsWarped=true, Loop fields are in beats (not seconds).
     _set_child_value(clip_el, "./Loop/LoopStart", "0")
-    _set_child_value(clip_el, "./Loop/LoopEnd", str(duration_seconds))
+    _set_child_value(clip_el, "./Loop/LoopEnd", str(end_beats))
     _set_child_value(clip_el, "./Loop/StartRelative", "0")
-    _set_child_value(clip_el, "./Loop/OutMarker", str(duration_seconds))
+    _set_child_value(clip_el, "./Loop/OutMarker", str(end_beats))
     _set_child_value(clip_el, "./Loop/HiddenLoopStart", "0")
-    _set_child_value(clip_el, "./Loop/HiddenLoopEnd", str(duration_seconds))
+    _set_child_value(clip_el, "./Loop/HiddenLoopEnd", str(end_beats))
     clip_label = _STEM_TO_TRACK_NAME.get(processed_file.stem_type, stem_path.stem.title())
     _set_child_value(clip_el, "./Name", clip_label)
     _set_child_value(
