@@ -613,3 +613,95 @@ class TestAlignModeSilence:
         global_min = min(mins)
         # Strings starts at 0.2s, drums at 2.0s → min must be ~0.2s, not 2.0s
         assert global_min < 0.5, f"global min should be ~0.2 (strings), got {global_min}"
+
+
+# ---------- 15. align_mode="none" disables all trim/shift ----------
+
+
+class TestAlignModeNone:
+    @patch("suno_to_ableton.features.export_als._get_audio_info", return_value=(48000 * 60, 48000))
+    def test_none_mode_uses_natural_beat_positions(self, _mock, tmp_path: Path):
+        """In 'none' mode warp markers anchor each beat at its natural time-derived
+        beat position (sec * bpm / 60) — no remapping."""
+        cfg = SunoPrepConfig(source_dir=tmp_path, align_mode="none")
+        # Beats at 5s, 5.5s, 6s — at 120 BPM → beat 10, 11, 12
+        beat_times = [5.0 + i * 0.5 for i in range(40)]
+        manifest = ProcessingManifest(
+            song_title="test",
+            bpm=120.0,
+            offset_seconds=0.0,
+            beat_times=beat_times,
+            stems=[ProcessedFile(
+                output_path=_touch_wav(tmp_path / "processed" / "stems" / "00_drums.wav"),
+                stem_type=StemType.DRUMS,
+            )],
+        )
+        result = export_als(manifest, cfg)
+        for clip_xml in _audio_clips_with_stems(_als_xml(result.output_path)):
+            wm = re.search(r"<WarpMarkers>.*?</WarpMarkers>", clip_xml, re.DOTALL)
+            markers = re.findall(
+                r'<WarpMarker[^/]*?SecTime="([\d.]+)"[^/]*?BeatTime="([-\d.]+)"',
+                wm.group(0),
+            )
+            secs = [float(s) for s, _ in markers]
+            beats = [float(b) for _, b in markers]
+            # First marker (0, 0) anchor + first beat at sec=5, beat=10
+            assert abs(secs[0]) < 1e-6 and abs(beats[0]) < 1e-6
+            # Find the marker for sec≈5
+            for s, b in zip(secs[1:], beats[1:]):
+                if abs(s - 5.0) < 1e-3:
+                    assert abs(b - 10.0) < 1e-3, f"sec=5.0 should map to beat=10, got {b}"
+                    break
+            else:
+                raise AssertionError("expected marker at sec=5.0")
+
+
+# ---------- 16. End-to-end with intro audio (Nanjing scenario) ----------
+
+
+class TestEndToEndIntroPreserved:
+    @patch("suno_to_ableton.features.export_als._get_audio_info", return_value=(48000 * 183, 48000))
+    def test_nanjing_shape_intro_preserved(self, _mock, tmp_path: Path):
+        """Reproduce the Nanjing scenario: drums kick in at ~16.8s but Strings
+        start at ~0.2s. With align_mode='silence', clip-sec 0 should be the
+        Strings start, and the drums' first beat should land on a whole bar."""
+        cfg = SunoPrepConfig(source_dir=tmp_path, align_mode="silence")
+        # Drums beat times in ORIGINAL audio: first beat ~14.8s
+        beat_times = [14.8 + i * 60.0 / 132.0 for i in range(380)]
+        # offset_seconds (after global-min trim across stems) = 0.2s
+        manifest = ProcessingManifest(
+            song_title="Nanjing",
+            bpm=132.0,
+            offset_seconds=0.2,
+            leading_silence=0.2,
+            downbeat_time=14.8,
+            beat_times=beat_times,
+            stems=[
+                ProcessedFile(
+                    output_path=_touch_wav(tmp_path / "processed" / "stems" / f"00_{st.value}.wav", duration_sec=183.0),
+                    stem_type=st,
+                )
+                for st in [StemType.DRUMS, StemType.BASS, StemType.SYNTH, StemType.VOCALS]
+            ],
+        )
+        result = export_als(manifest, cfg)
+        xml = _als_xml(result.output_path)
+
+        # Validate every audio clip has the (0, 0) anchor and a bar-snapped drums beat
+        for clip_xml in _audio_clips_with_stems(xml):
+            wm = re.search(r"<WarpMarkers>.*?</WarpMarkers>", clip_xml, re.DOTALL)
+            markers = re.findall(
+                r'<WarpMarker[^/]*?SecTime="([\d.]+)"[^/]*?BeatTime="([-\d.]+)"',
+                wm.group(0),
+            )
+            assert len(markers) > 100  # per-beat markers
+            secs = [float(s) for s, _ in markers]
+            beats = [float(b) for _, b in markers]
+            # Anchor at clip start
+            assert abs(secs[0]) < 1e-6
+            assert abs(beats[0]) < 1e-6
+            # Second marker = drums first beat at clip-sec ~14.6s, snapped to whole bar
+            assert beats[1] > 0
+            assert beats[1] % 4 == 0
+            # The clip-sec of beat 1 should be (drums first beat - trim) ≈ 14.6s
+            assert abs(secs[1] - 14.6) < 0.5
