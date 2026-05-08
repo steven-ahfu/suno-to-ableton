@@ -19,11 +19,13 @@ from suno_to_ableton.models import (
 
 class TestStemType:
     def test_all_stem_types_have_values(self):
-        expected = {
+        # Core types Suno emits via stem export — must always be present.
+        required = {
             "drums", "bass", "vocals", "backing_vocals", "synth",
             "fx", "percussion", "sample", "full_mix", "other",
         }
-        assert {s.value for s in StemType} == expected
+        actual = {s.value for s in StemType}
+        assert required.issubset(actual), f"missing: {required - actual}"
 
     def test_stem_name_map_covers_key_types(self):
         assert STEM_NAME_MAP["drums"] == StemType.DRUMS
@@ -32,6 +34,16 @@ class TestStemType:
         assert STEM_NAME_MAP["backing_vocals"] == StemType.BACKING_VOCALS
         assert STEM_NAME_MAP["synth"] == StemType.SYNTH
         assert STEM_NAME_MAP["fx"] == StemType.FX
+
+    def test_extended_instrument_types(self):
+        # Suno occasionally emits orchestral / instrumental stems.
+        assert StemType.GUITAR.value == "guitar"
+        assert StemType.STRINGS.value == "strings"
+        assert StemType.BRASS.value == "brass"
+        assert StemType.WOODWINDS.value == "woodwinds"
+        assert StemType.KEYBOARD.value == "keyboard"
+        assert STEM_NAME_MAP["guitar"] == StemType.GUITAR
+        assert STEM_NAME_MAP["strings"] == StemType.STRINGS
 
 
 class TestDiscoveredFile:

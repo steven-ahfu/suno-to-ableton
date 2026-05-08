@@ -26,7 +26,9 @@ from ..models import (
 from ..reporting import write_json_report
 
 
-# Map stem types to expected template track names
+# Map stem types to expected template track names. Stems whose target track
+# is not in the bundled .als template are auto-cloned from "Other" (see
+# _clone_audio_track_for_missing).
 _STEM_TO_TRACK_NAME: dict[StemType, str] = {
     StemType.DRUMS: "Drums",
     StemType.PERCUSSION: "Percussion",
@@ -35,11 +37,22 @@ _STEM_TO_TRACK_NAME: dict[StemType, str] = {
     StemType.VOCALS: "Vocals",
     StemType.BACKING_VOCALS: "Backing Vocals",
     StemType.FX: "FX",
+    StemType.GUITAR: "Guitar",
+    StemType.STRINGS: "Strings",
+    StemType.BRASS: "Brass",
+    StemType.WOODWINDS: "Woodwinds",
+    StemType.KEYBOARD: "Keyboard",
+    StemType.PIANO: "Piano",
+    StemType.ORGAN: "Organ",
+    StemType.PAD: "Pad",
+    StemType.LEAD: "Lead",
+    StemType.SAMPLE: "Sample",
     StemType.FULL_MIX: "Full Mix",
     StemType.OTHER: "Other",
 }
 
-# Ableton track color palette indices
+# Ableton track color palette indices (palette is 0-69; colors picked to be
+# visually distinct from neighbors).
 _TRACK_COLORS: dict[StemType, int] = {
     StemType.DRUMS: 69,
     StemType.PERCUSSION: 17,
@@ -48,6 +61,16 @@ _TRACK_COLORS: dict[StemType, int] = {
     StemType.VOCALS: 57,
     StemType.BACKING_VOCALS: 58,
     StemType.FX: 45,
+    StemType.GUITAR: 11,
+    StemType.STRINGS: 33,
+    StemType.BRASS: 13,
+    StemType.WOODWINDS: 30,
+    StemType.KEYBOARD: 26,
+    StemType.PIANO: 27,
+    StemType.ORGAN: 25,
+    StemType.PAD: 50,
+    StemType.LEAD: 51,
+    StemType.SAMPLE: 38,
     StemType.FULL_MIX: 0,
     StemType.OTHER: 6,
 }
@@ -66,6 +89,18 @@ _PREFERRED_MIDI_TRACK_BY_STEM: dict[StemType, str] = {
     StemType.BASS: "MIDI Bass",
     StemType.SYNTH: "MIDI Synth",
     StemType.FX: "MIDI FX",
+    # Tonal/instrumental stems route their MIDI to the Synth slot (closest match
+    # in the bundled template). They get their own AUDIO tracks via cloning.
+    StemType.GUITAR: "MIDI Synth",
+    StemType.STRINGS: "MIDI Synth",
+    StemType.BRASS: "MIDI Synth",
+    StemType.WOODWINDS: "MIDI Synth",
+    StemType.KEYBOARD: "MIDI Synth",
+    StemType.PIANO: "MIDI Synth",
+    StemType.ORGAN: "MIDI Synth",
+    StemType.PAD: "MIDI Synth",
+    StemType.LEAD: "MIDI Synth",
+    StemType.SAMPLE: "MIDI (Song)",
     StemType.FULL_MIX: "MIDI (Song)",
     StemType.OTHER: "MIDI (Song)",
 }
