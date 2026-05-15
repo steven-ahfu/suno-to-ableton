@@ -71,7 +71,7 @@ def test_cleanup_midi_preserves_note_timing(tmp_path: Path):
         output_dir=output_dir,
         offset_seconds=0.75,
         bpm=144.0,
-        config=SunoPrepConfig(source_dir=tmp_path),
+        config=SunoPrepConfig(source_dir=tmp_path, align_downbeat=False),
         stem_type=StemType.BASS,
     )
 

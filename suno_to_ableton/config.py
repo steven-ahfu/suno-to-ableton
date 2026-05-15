@@ -44,6 +44,18 @@ class SunoPrepConfig(BaseModel):
     export_als: bool = False
     als_template: Optional[Path] = None  # path to Ableton .als template
     ableton_version: int = 12  # target Ableton Live version (11 or 12)
+    bpm_override: Optional[float] = None  # manual BPM, bypasses detection
+    snap_bpm: bool = False  # round detected BPM to nearest integer
+    align_downbeat: bool = True  # backward-compat: when True, apply alignment per align_mode
+    # "silence" (default): trim leading silence only — preserves intro audio.
+    #   Drums lock to nearest bar via warp markers.
+    # "downbeat": trim to first detected downbeat — drums land on bar 1.1.1.
+    #   Discards intro audio that came before the drums (often 5-15s of pad/vocals).
+    # "none": no trim, no shift.
+    align_mode: str = "silence"
+    beat_offset: int = 0  # nudge alignment by N beats (e.g. -1, +1) when downbeat detection lands on the wrong phase
+    detect_downbeat: bool = True  # vote across bar phases using onset energy to find true beat 1
+    per_beat_warp_markers: bool = True  # write a warp marker per detected beat (resilient to BPM error / tempo drift)
 
     @property
     def resolved_output_dir(self) -> Path:

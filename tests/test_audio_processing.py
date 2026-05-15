@@ -29,7 +29,7 @@ def test_process_audio_file_preserves_source_timing(tmp_path: Path):
         ),
         output_dir=tmp_path / "processed" / "stems",
         offset_seconds=1.5,
-        config=SunoPrepConfig(source_dir=tmp_path),
+        config=SunoPrepConfig(source_dir=tmp_path, align_downbeat=False),
     )
 
     info = sf.info(str(output_path))

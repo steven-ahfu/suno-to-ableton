@@ -26,7 +26,9 @@ from ..models import (
 from ..reporting import write_json_report
 
 
-# Map stem types to expected template track names
+# Map stem types to expected template track names. Stems whose target track
+# is not in the bundled .als template are auto-cloned from "Other" (see
+# _clone_audio_track_for_missing).
 _STEM_TO_TRACK_NAME: dict[StemType, str] = {
     StemType.DRUMS: "Drums",
     StemType.PERCUSSION: "Percussion",
@@ -35,11 +37,22 @@ _STEM_TO_TRACK_NAME: dict[StemType, str] = {
     StemType.VOCALS: "Vocals",
     StemType.BACKING_VOCALS: "Backing Vocals",
     StemType.FX: "FX",
+    StemType.GUITAR: "Guitar",
+    StemType.STRINGS: "Strings",
+    StemType.BRASS: "Brass",
+    StemType.WOODWINDS: "Woodwinds",
+    StemType.KEYBOARD: "Keyboard",
+    StemType.PIANO: "Piano",
+    StemType.ORGAN: "Organ",
+    StemType.PAD: "Pad",
+    StemType.LEAD: "Lead",
+    StemType.SAMPLE: "Sample",
     StemType.FULL_MIX: "Full Mix",
     StemType.OTHER: "Other",
 }
 
-# Ableton track color palette indices
+# Ableton track color palette indices (palette is 0-69; colors picked to be
+# visually distinct from neighbors).
 _TRACK_COLORS: dict[StemType, int] = {
     StemType.DRUMS: 69,
     StemType.PERCUSSION: 17,
@@ -48,6 +61,16 @@ _TRACK_COLORS: dict[StemType, int] = {
     StemType.VOCALS: 57,
     StemType.BACKING_VOCALS: 58,
     StemType.FX: 45,
+    StemType.GUITAR: 11,
+    StemType.STRINGS: 33,
+    StemType.BRASS: 13,
+    StemType.WOODWINDS: 30,
+    StemType.KEYBOARD: 26,
+    StemType.PIANO: 27,
+    StemType.ORGAN: 25,
+    StemType.PAD: 50,
+    StemType.LEAD: 51,
+    StemType.SAMPLE: 38,
     StemType.FULL_MIX: 0,
     StemType.OTHER: 6,
 }
@@ -66,6 +89,18 @@ _PREFERRED_MIDI_TRACK_BY_STEM: dict[StemType, str] = {
     StemType.BASS: "MIDI Bass",
     StemType.SYNTH: "MIDI Synth",
     StemType.FX: "MIDI FX",
+    # Tonal/instrumental stems route their MIDI to the Synth slot (closest match
+    # in the bundled template). They get their own AUDIO tracks via cloning.
+    StemType.GUITAR: "MIDI Synth",
+    StemType.STRINGS: "MIDI Synth",
+    StemType.BRASS: "MIDI Synth",
+    StemType.WOODWINDS: "MIDI Synth",
+    StemType.KEYBOARD: "MIDI Synth",
+    StemType.PIANO: "MIDI Synth",
+    StemType.ORGAN: "MIDI Synth",
+    StemType.PAD: "MIDI Synth",
+    StemType.LEAD: "MIDI Synth",
+    StemType.SAMPLE: "MIDI (Song)",
     StemType.FULL_MIX: "MIDI (Song)",
     StemType.OTHER: "MIDI (Song)",
 }
@@ -397,6 +432,7 @@ def _update_reference_audio_clips(
     output_path: Path,
     bpm: float,
     clip_id_start: int,
+    clip_beat_pairs: list[tuple[float, float]] | None = None,
 ) -> int:
     """Replace reference audio clips with rebuilt clips for processed stems."""
     tracks_created = 0
@@ -423,6 +459,7 @@ def _update_reference_audio_clips(
             output_path=output_path,
             bpm=bpm,
             clip_id=clip_id_counter,
+            clip_beat_pairs=clip_beat_pairs,
         )
         clip_id_counter += 1
         _replace_events(events_el, clip_el)
@@ -446,29 +483,60 @@ def _rebuild_warp_markers(
     clip_el: ET.Element,
     duration_seconds: float,
     end_beats: float,
+    clip_beat_pairs: list[tuple[float, float]] | None = None,
 ) -> None:
-    """Replace prototype warp markers with a minimal start/end pair."""
+    """Replace prototype warp markers.
+
+    `clip_beat_pairs` is a list of (sec_in_clip, beat_in_clip) anchors.
+    Falls back to a minimal start/end pair if not provided.
+    """
     markers = clip_el.find("./WarpMarkers")
     if markers is None:
         return
     for child in list(markers):
         markers.remove(child)
-    markers.append(
-        ET.Element(
-            "WarpMarker",
-            {"Id": "0", "SecTime": "0", "BeatTime": "0"},
+
+    pairs: list[tuple[float, float]] = []
+    if clip_beat_pairs and len(clip_beat_pairs) >= 2:
+        seen_secs: set[float] = set()
+        seen_beats: set[float] = set()
+        for sec, beat in clip_beat_pairs:
+            if sec < 0 or sec > duration_seconds + 1e-3:
+                continue
+            sec_key = round(float(sec), 6)
+            beat_key = round(float(beat), 6)
+            if sec_key in seen_secs or beat_key in seen_beats:
+                continue
+            seen_secs.add(sec_key)
+            seen_beats.add(beat_key)
+            pairs.append((float(sec), float(beat)))
+        # Ensure (0, 0) anchor at the start so bar 1.1.1 = clip start.
+        if pairs and pairs[0][0] > 1e-6:
+            pairs.insert(0, (0.0, 0.0))
+        # End marker — extrapolate beat position from the last pair.
+        if pairs and pairs[-1][0] < duration_seconds - 1e-6:
+            last_sec, last_beat = pairs[-1]
+            if last_sec > 0:
+                # Maintain the last segment's beat-per-second rate.
+                rate = last_beat / last_sec if last_sec > 1e-9 else 0
+                if len(pairs) >= 2:
+                    prev_sec, prev_beat = pairs[-2]
+                    if last_sec > prev_sec:
+                        rate = (last_beat - prev_beat) / (last_sec - prev_sec)
+                final_beat = last_beat + rate * (duration_seconds - last_sec)
+            else:
+                final_beat = end_beats
+            pairs.append((duration_seconds, max(final_beat, last_beat + 1e-3)))
+    if not pairs:
+        pairs = [(0.0, 0.0), (duration_seconds, end_beats)]
+
+    for idx, (sec, beat) in enumerate(pairs):
+        markers.append(
+            ET.Element(
+                "WarpMarker",
+                {"Id": str(idx), "SecTime": str(sec), "BeatTime": str(beat)},
+            )
         )
-    )
-    markers.append(
-        ET.Element(
-            "WarpMarker",
-            {
-                "Id": "1",
-                "SecTime": str(duration_seconds),
-                "BeatTime": str(end_beats),
-            },
-        )
-    )
 
 
 def _build_audio_clip_from_prototype(
@@ -477,6 +545,7 @@ def _build_audio_clip_from_prototype(
     output_path: Path,
     bpm: float,
     clip_id: int,
+    clip_beat_pairs: list[tuple[float, float]] | None = None,
 ) -> ET.Element:
     """Clone an Ableton-authored audio clip and retarget it to a stem file."""
     stem_path = Path(processed_file.output_path)
@@ -486,15 +555,17 @@ def _build_audio_clip_from_prototype(
 
     clip_el = copy.deepcopy(prototype)
     clip_el.set("Id", str(clip_id))
+    _renumber_pointee_ids(clip_el, clip_id * 10000 + 1_000_000)
     clip_el.set("Time", "0")
     _set_child_value(clip_el, "./CurrentStart", "0")
     _set_child_value(clip_el, "./CurrentEnd", str(end_beats))
+    # When IsWarped=true, Loop fields are in beats (not seconds).
     _set_child_value(clip_el, "./Loop/LoopStart", "0")
-    _set_child_value(clip_el, "./Loop/LoopEnd", str(duration_seconds))
+    _set_child_value(clip_el, "./Loop/LoopEnd", str(end_beats))
     _set_child_value(clip_el, "./Loop/StartRelative", "0")
-    _set_child_value(clip_el, "./Loop/OutMarker", str(duration_seconds))
+    _set_child_value(clip_el, "./Loop/OutMarker", str(end_beats))
     _set_child_value(clip_el, "./Loop/HiddenLoopStart", "0")
-    _set_child_value(clip_el, "./Loop/HiddenLoopEnd", str(duration_seconds))
+    _set_child_value(clip_el, "./Loop/HiddenLoopEnd", str(end_beats))
     clip_label = _STEM_TO_TRACK_NAME.get(processed_file.stem_type, stem_path.stem.title())
     _set_child_value(clip_el, "./Name", clip_label)
     _set_child_value(
@@ -506,7 +577,7 @@ def _build_audio_clip_from_prototype(
     _set_child_value(clip_el, "./ScrollerTimePreserver/RightTime", str(end_beats))
     _set_child_value(clip_el, "./FreezeStart", "0")
     _set_child_value(clip_el, "./FreezeEnd", "0")
-    _set_child_value(clip_el, "./IsWarped", "false")
+    _set_child_value(clip_el, "./IsWarped", "true")
     _set_child_value(clip_el, "./TakeId", "1")
     _set_child_value(clip_el, "./SampleRef/DefaultDuration", str(frames))
     _set_child_value(clip_el, "./SampleRef/DefaultSampleRate", str(sr))
@@ -514,7 +585,7 @@ def _build_audio_clip_from_prototype(
     file_ref = clip_el.find("./SampleRef/FileRef")
     if file_ref is not None:
         _update_file_ref(file_ref, output_path, stem_path)
-    _rebuild_warp_markers(clip_el, duration_seconds, end_beats)
+    _rebuild_warp_markers(clip_el, duration_seconds, end_beats, clip_beat_pairs)
     _set_child_value(clip_el, "./MarkersGenerated", "false")
     _set_child_value(clip_el, "./IsSongTempoLeader", "false")
     _set_child_value(clip_el, "./AutoWarpPending", "false")
@@ -602,6 +673,7 @@ def _build_midi_clip_from_prototype(
 
     clip_el = copy.deepcopy(prototype)
     clip_el.set("Id", str(clip_id))
+    _renumber_pointee_ids(clip_el, clip_id * 10000 + 1_000_000)
     clip_el.set("Time", "0")
     _set_child_value(clip_el, "./CurrentStart", "0")
     _set_child_value(clip_el, "./CurrentEnd", str(end_beats))
@@ -731,6 +803,115 @@ def _promote_fx_track_to_song_midi(
     _set_track_name(fx_track, "MIDI (Song)")
 
 
+def _renumber_pointee_ids(element: ET.Element, offset: int) -> int:
+    """Shift every Pointee-ID-bearing attribute in `element` by `offset`.
+
+    Live tracks reference internal IDs in two ways:
+      • As an Id attribute on the target element (AutomationTarget, ModulationTarget, ...).
+      • As a child `<PointeeId Value="N"/>` referencing an Id elsewhere.
+
+    Adding a constant offset to every numeric Id attribute and every PointeeId.Value
+    keeps cross-references inside the cloned subtree intact while making the clone
+    globally unique. Returns the maximum new ID seen, so callers can advance further.
+    """
+    max_seen = 0
+    # Tags whose Id is clip/track/file/marker-local — IDs may legitimately repeat
+    # across the document and shouldn't be renumbered.
+    skip_tags = {
+        "AudioClip",
+        "MidiClip",
+        "AudioTrack",
+        "MidiTrack",
+        "FileRef",
+        "BranchSourceContext",
+        "WarpMarker",
+    }
+    for el in element.iter():
+        if el.tag in skip_tags:
+            continue
+        if "Id" in el.attrib:
+            try:
+                old = int(el.get("Id"))
+            except (TypeError, ValueError):
+                pass
+            else:
+                new = old + offset
+                el.set("Id", str(new))
+                max_seen = max(max_seen, new)
+        if el.tag == "PointeeId":
+            try:
+                old = int(el.get("Value", "0"))
+            except (TypeError, ValueError):
+                pass
+            else:
+                new = old + offset
+                el.set("Value", str(new))
+                max_seen = max(max_seen, new)
+    return max_seen
+
+
+def _clone_audio_track_for_missing(
+    tracks_el: ET.Element,
+    missing_names: list[str],
+    next_pointee_id_el: ET.Element | None,
+    base_track_name: str = "Other",
+) -> None:
+    """Clone a base audio track for each missing stem track name.
+
+    Live requires every Pointee ID to be unique across the document. We deep-copy the
+    base track, then offset all Pointee IDs in the clone so they don't collide.
+    """
+    if not missing_names:
+        return
+    base_track = _find_track_by_name(tracks_el, base_track_name, tags=["AudioTrack"])
+    if base_track is None:
+        for track in tracks_el:
+            if track.tag == "AudioTrack":
+                base_track = track
+                break
+    if base_track is None:
+        return
+
+    existing_track_ids: list[int] = []
+    for track in tracks_el:
+        try:
+            existing_track_ids.append(int(track.get("Id", "0")))
+        except ValueError:
+            pass
+    next_track_id = (max(existing_track_ids) if existing_track_ids else 0) + 100
+
+    if next_pointee_id_el is not None:
+        try:
+            next_pointee = int(next_pointee_id_el.get("Value", "0"))
+        except (TypeError, ValueError):
+            next_pointee = 100000
+    else:
+        next_pointee = 100000
+
+    # Live requires track order: AudioTrack* MidiTrack* ReturnTrack* MasterTrack.
+    # Insert clones before the first MidiTrack/ReturnTrack/MasterTrack so they
+    # remain grouped with the other AudioTracks.
+    insert_index = len(list(tracks_el))
+    for i, track in enumerate(tracks_el):
+        if track.tag in ("MidiTrack", "ReturnTrack", "MasterTrack"):
+            insert_index = i
+            break
+
+    for name in missing_names:
+        clone = copy.deepcopy(base_track)
+        clone.set("Id", str(next_track_id))
+        next_track_id += 1
+        _set_track_name(clone, name)
+        offset = next_pointee + 1
+        max_id = _renumber_pointee_ids(clone, offset)
+        next_pointee = max(next_pointee + 100000, max_id + 100)
+        tracks_el.insert(insert_index, clone)
+        insert_index += 1
+
+    if next_pointee_id_el is not None:
+        next_pointee_id_el.set("Value", str(next_pointee + 100))
+
+
 def _prune_unused_template_tracks(
     tracks_el: ET.Element,
     desired_audio_tracks: set[str],
@@ -841,9 +1022,80 @@ def export_als(
     # 1. Set BPM
     bpm = manifest.bpm or 120.0
     result.bpm_set = bpm
+
+    # Per-beat warp marker pairs: list of (sec_in_clip, beat_in_clip).
+    # The exact mapping depends on align_mode:
+    #   "downbeat" — first detected beat lands at clip-beat 0 (bar 1.1.1).
+    #   "silence"  — bar 1.1.1 is the start of audio; the drums' first downbeat
+    #                snaps to the nearest whole bar so the grid still locks to
+    #                the kick. Intro audio (pad/vocals before drums) is preserved.
+    #   "none"     — natural beat positions; no remapping.
+    clip_beat_pairs: list[tuple[float, float]] | None = None
+    if config.per_beat_warp_markers and manifest.beat_times:
+        trim_offset = manifest.offset_seconds or 0.0
+        beat_times = list(manifest.beat_times)
+        mode = config.align_mode if config.align_downbeat else "none"
+        if mode == "downbeat":
+            shifted = [t - trim_offset for t in beat_times if t >= trim_offset - 1e-3]
+            if len(shifted) >= 2:
+                clip_beat_pairs = [(max(0.0, float(s)), float(i)) for i, s in enumerate(shifted)]
+        elif mode == "silence":
+            # Snap the *detected downbeat* (not the first detected beat) to the
+            # nearest whole bar. Phase voting may have placed the downbeat
+            # several beats into the beat_times list — earlier beats are pickup
+            # beats that should land BEFORE the downbeat in the warp grid.
+            in_clip_with_idx = [
+                (t - trim_offset, i) for i, t in enumerate(beat_times) if t >= trim_offset - 1e-3
+            ]
+            if len(in_clip_with_idx) >= 2:
+                downbeat_in_clip = max(0.0, float(manifest.downbeat_time or beat_times[0]) - trim_offset)
+                # Find which index in beat_times corresponds to the downbeat.
+                downbeat_idx_in_list = 0
+                best_dist = float("inf")
+                for sec_in_clip, orig_idx in in_clip_with_idx:
+                    d = abs(sec_in_clip - downbeat_in_clip)
+                    if d < best_dist:
+                        best_dist = d
+                        downbeat_idx_in_list = orig_idx
+                # Snap the downbeat to the nearest whole bar.
+                raw_beat = downbeat_in_clip * bpm / 60.0
+                target_downbeat = round(raw_beat / 4.0) * 4
+                if target_downbeat <= 0:
+                    target_downbeat = 0
+                pairs: list[tuple[float, float]] = [(0.0, 0.0)] if target_downbeat > 0 else []
+                for sec_in_clip, orig_idx in in_clip_with_idx:
+                    beat_pos = target_downbeat + (orig_idx - downbeat_idx_in_list)
+                    pairs.append((max(0.0, float(sec_in_clip)), float(beat_pos)))
+                clip_beat_pairs = pairs
+        else:  # "none"
+            in_clip = beat_times
+            if len(in_clip) >= 2:
+                # Each beat sits at its natural beat-time = sec * bpm / 60
+                clip_beat_pairs = [(float(t), float(t * bpm / 60.0)) for t in in_clip]
     tempo_el = liveset.find(".//Tempo/Manual")
     if tempo_el is not None:
         tempo_el.set("Value", _format_ableton_float(bpm))
+
+    # 1b. Flatten tempo automation envelope (template ships with one that
+    # overrides the manual value, causing varying-BPM behavior in Live).
+    tempo_target_id_el = liveset.find(".//Tempo/AutomationTarget")
+    if tempo_target_id_el is not None:
+        target_id = tempo_target_id_el.get("Id")
+        for env in liveset.findall(".//AutomationEnvelope"):
+            pointee = env.find(".//PointeeId")
+            if pointee is not None and pointee.get("Value") == target_id:
+                events_el = env.find(".//Events")
+                if events_el is not None:
+                    for child in list(events_el):
+                        events_el.remove(child)
+                    flat = ET.SubElement(events_el, "FloatEvent")
+                    flat.set("Id", "0")
+                    flat.set("Time", "-63072000")
+                    flat.set("Value", _format_ableton_float(bpm))
+                    flat2 = ET.SubElement(events_el, "FloatEvent")
+                    flat2.set("Id", "1")
+                    flat2.set("Time", "0")
+                    flat2.set("Value", _format_ableton_float(bpm))
 
     desired_audio_tracks = {
         track_name
@@ -857,6 +1109,17 @@ def export_als(
     )
     _promote_fx_track_to_other(tracks_el, desired_audio_tracks)
     _promote_fx_track_to_song_midi(tracks_el, desired_midi_tracks)
+    existing_audio = {
+        _track_name(t) for t in tracks_el if t.tag == "AudioTrack"
+    }
+    missing_audio = [n for n in desired_audio_tracks if n and n not in existing_audio]
+    if missing_audio:
+        _clone_audio_track_for_missing(
+            tracks_el,
+            missing_audio,
+            next_pointee_id_el=next_id_el,
+            base_track_name="Other",
+        )
     _prune_unused_template_tracks(
         tracks_el,
         desired_audio_tracks=desired_audio_tracks,
@@ -871,6 +1134,7 @@ def export_als(
             output_path=output_path,
             bpm=bpm,
             clip_id_start=clip_id_counter,
+            clip_beat_pairs=clip_beat_pairs,
         )
         clip_id_counter += result.tracks_created
         result.midi_tracks_created = _update_reference_midi_clips(
@@ -881,7 +1145,23 @@ def export_als(
             clip_id_start=clip_id_counter,
         )
         clip_id_counter += result.midi_tracks_created
-        next_id_el.set("Value", str(clip_id_counter + 100))
+        # NextPointeeId must exceed every Pointee Id in the document (clones may
+        # have bumped some into the 100k+ range).
+        max_pointee = 0
+        for el in root.iter():
+            if "Id" in el.attrib and (
+                el.tag.endswith("Target") or el.tag.endswith("Targets") or el.tag == "MidiControllerRange"
+            ):
+                try:
+                    max_pointee = max(max_pointee, int(el.get("Id")))
+                except (TypeError, ValueError):
+                    pass
+            if el.tag == "PointeeId":
+                try:
+                    max_pointee = max(max_pointee, int(el.get("Value", "0")))
+                except (TypeError, ValueError):
+                    pass
+        next_id_el.set("Value", str(max(clip_id_counter, max_pointee) + 100))
         output_path.parent.mkdir(parents=True, exist_ok=True)
         xml_out = ET.tostring(root, encoding="unicode", xml_declaration=False)
         xml_out = '<?xml version="1.0" encoding="UTF-8"?>\n' + xml_out
@@ -919,6 +1199,7 @@ def export_als(
             output_path=output_path,
             bpm=bpm,
             clip_id=clip_id_counter,
+            clip_beat_pairs=clip_beat_pairs,
         )
         clip_id_counter += 1
         events_el.append(clip_el)
@@ -956,8 +1237,24 @@ def export_als(
         midi_tracks_created += 1
     result.midi_tracks_created = midi_tracks_created
 
-    # Update NextPointeeId
-    next_id_el.set("Value", str(clip_id_counter + 100))
+    # Update NextPointeeId — must exceed every Pointee Id in the document
+    # (cloned tracks may have bumped Ids well above clip_id_counter).
+    skip_id_tags = {"AudioClip", "MidiClip", "AudioTrack", "MidiTrack", "FileRef", "BranchSourceContext", "WarpMarker"}
+    max_pointee = 0
+    for el in root.iter():
+        if el.tag in skip_id_tags:
+            continue
+        if "Id" in el.attrib:
+            try:
+                max_pointee = max(max_pointee, int(el.get("Id")))
+            except (TypeError, ValueError):
+                pass
+        if el.tag == "PointeeId":
+            try:
+                max_pointee = max(max_pointee, int(el.get("Value", "0")))
+            except (TypeError, ValueError):
+                pass
+    next_id_el.set("Value", str(max(clip_id_counter, max_pointee) + 100))
 
     # 4. Write output
     output_path.parent.mkdir(parents=True, exist_ok=True)

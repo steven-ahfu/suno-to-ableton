@@ -38,8 +38,19 @@ class TestClassifyStemName:
         assert _classify_stem_name("My Song (Backing Vocals)") == StemType.BACKING_VOCALS
 
     def test_unknown_returns_other(self):
-        assert _classify_stem_name("guitar") == StemType.OTHER
         assert _classify_stem_name("random") == StemType.OTHER
+        assert _classify_stem_name("xyzzy") == StemType.OTHER
+
+    def test_extended_instrument_stems(self):
+        # Suno emits these in some songs — must each get their own StemType.
+        assert _classify_stem_name("guitar") == StemType.GUITAR
+        assert _classify_stem_name("Strings") == StemType.STRINGS
+        assert _classify_stem_name("Brass") == StemType.BRASS
+        assert _classify_stem_name("Woodwinds") == StemType.WOODWINDS
+        assert _classify_stem_name("Keyboard") == StemType.KEYBOARD
+        assert _classify_stem_name("Piano") == StemType.PIANO
+        assert _classify_stem_name("Pad") == StemType.PAD
+        assert _classify_stem_name("Lead") == StemType.LEAD
 
     def test_whitespace_stripped(self):
         assert _classify_stem_name("  drums  ") == StemType.DRUMS

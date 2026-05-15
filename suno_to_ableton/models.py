@@ -18,6 +18,15 @@ class StemType(str, Enum):
     FX = "fx"
     PERCUSSION = "percussion"
     SAMPLE = "sample"
+    GUITAR = "guitar"
+    STRINGS = "strings"
+    BRASS = "brass"
+    WOODWINDS = "woodwinds"
+    KEYBOARD = "keyboard"
+    PIANO = "piano"
+    ORGAN = "organ"
+    PAD = "pad"
+    LEAD = "lead"
     FULL_MIX = "full_mix"
     OTHER = "other"
 
@@ -37,13 +46,41 @@ class SeparatorBackend(str, Enum):
 # Mapping from Suno stem names to StemType
 STEM_NAME_MAP: dict[str, StemType] = {
     "drums": StemType.DRUMS,
+    "drum": StemType.DRUMS,
     "bass": StemType.BASS,
     "vocals": StemType.VOCALS,
+    "vocal": StemType.VOCALS,
+    "lead vocals": StemType.VOCALS,
+    "lead vocal": StemType.VOCALS,
     "backing_vocals": StemType.BACKING_VOCALS,
+    "backing vocals": StemType.BACKING_VOCALS,
+    "backing vocal": StemType.BACKING_VOCALS,
     "synth": StemType.SYNTH,
+    "synths": StemType.SYNTH,
     "fx": StemType.FX,
+    "effects": StemType.FX,
+    "sfx": StemType.FX,
     "percussion": StemType.PERCUSSION,
+    "perc": StemType.PERCUSSION,
     "sample": StemType.SAMPLE,
+    "samples": StemType.SAMPLE,
+    "guitar": StemType.GUITAR,
+    "guitars": StemType.GUITAR,
+    "gtr": StemType.GUITAR,
+    "strings": StemType.STRINGS,
+    "string": StemType.STRINGS,
+    "brass": StemType.BRASS,
+    "horns": StemType.BRASS,
+    "woodwinds": StemType.WOODWINDS,
+    "woodwind": StemType.WOODWINDS,
+    "keyboard": StemType.KEYBOARD,
+    "keys": StemType.KEYBOARD,
+    "piano": StemType.PIANO,
+    "organ": StemType.ORGAN,
+    "pad": StemType.PAD,
+    "pads": StemType.PAD,
+    "lead": StemType.LEAD,
+    "leads": StemType.LEAD,
 }
 
 
@@ -228,6 +265,9 @@ class ProcessingManifest(BaseModel):
     offset_seconds: Optional[float] = None
     offset_samples: Optional[int] = None
     samples_per_beat: Optional[float] = None
+    beat_times: list[float] = Field(default_factory=list)
+    leading_silence: float = 0.0
+    downbeat_time: float = 0.0
     target_sr: int = 48000
     stems: list[ProcessedFile] = Field(default_factory=list)
     midi_files: list[ProcessedFile] = Field(default_factory=list)
