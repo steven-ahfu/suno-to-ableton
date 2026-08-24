@@ -156,3 +156,79 @@ class TestExportALS:
         assert "<SampleRef>" in text
         assert "<FileRef>" in text
         assert "<MidiClip " in text
+
+
+class TestAbletonVersionTargeting:
+    """Ableton Live 10 targeting and MIDI-less exports."""
+
+    def _stems_only_manifest(self, tmp_path: Path) -> ProcessingManifest:
+        return ProcessingManifest(
+            song_title="untitled",
+            bpm=126.0,
+            stems=[
+                ProcessedFile(output_path=_touch(tmp_path / "processed" / "stems" / "01_drums.wav"), stem_type=StemType.DRUMS),
+                ProcessedFile(output_path=_touch(tmp_path / "processed" / "stems" / "02_bass.wav"), stem_type=StemType.BASS),
+            ],
+            midi_files=[],
+        )
+
+    @patch("suno_to_ableton.features.export_als._get_audio_info", return_value=(480000, 48000))
+    def test_export_without_midi_files_succeeds(self, _mock_audio, tmp_path: Path):
+        """A stems-only project must not require a MIDI clip prototype."""
+        config = SunoPrepConfig(source_dir=tmp_path, output_dir=Path("processed"))
+        result = export_als(self._stems_only_manifest(tmp_path), config)
+
+        assert result.output_path.exists()
+        assert result.tracks_created == 2
+        assert result.midi_tracks_created == 0
+
+    @patch("suno_to_ableton.features.export_als._get_audio_info", return_value=(480000, 48000))
+    def test_live_10_writes_version_header(self, _mock_audio, tmp_path: Path):
+        config = SunoPrepConfig(source_dir=tmp_path, output_dir=Path("processed"), ableton_version=10)
+        result = export_als(self._stems_only_manifest(tmp_path), config)
+
+        root = _als_root(result.output_path)
+        assert root.get("MinorVersion") == "10.0_377"
+        assert "10" in root.get("Creator")
+
+    @patch("suno_to_ableton.features.export_als._get_audio_info", return_value=(480000, 48000))
+    def test_live_10_uses_legacy_fileref_format(self, _mock_audio, tmp_path: Path):
+        """Live 10 reads element-based sample paths, not Live 11 string paths."""
+        config = SunoPrepConfig(source_dir=tmp_path, output_dir=Path("processed"), ableton_version=10)
+        result = export_als(self._stems_only_manifest(tmp_path), config)
+
+        text = _als_text(result.output_path)
+        assert "<HasRelativePath Value=\"true\" />" in text
+        assert "<RelativePathElement " in text
+        assert "<RelativePath Value=" not in text
+
+        root = _als_root(result.output_path)
+        fileref = root.find(".//FileRef")
+        assert fileref.find("Name").get("Value").endswith(".wav")
+        assert fileref.find("RelativePathType").get("Value") == "3"
+
+    @patch("suno_to_ableton.features.export_als._get_audio_info", return_value=(480000, 48000))
+    def test_live_10_strips_live_11_only_elements(self, _mock_audio, tmp_path: Path):
+        config = SunoPrepConfig(source_dir=tmp_path, output_dir=Path("processed"), ableton_version=10)
+        result = export_als(self._stems_only_manifest(tmp_path), config)
+
+        text = _als_text(result.output_path)
+        for tag in ("TakeLanes", "TakeId", "LinkedTrackGroupId", "IsInKey", "ScaleInformation"):
+            assert f"<{tag}" not in text
+
+    @patch("suno_to_ableton.features.export_als._get_audio_info", return_value=(480000, 48000))
+    def test_live_10_marks_output_dir_as_project_root(self, _mock_audio, tmp_path: Path):
+        config = SunoPrepConfig(source_dir=tmp_path, output_dir=Path("processed"), ableton_version=10)
+        result = export_als(self._stems_only_manifest(tmp_path), config)
+
+        assert (result.output_path.parent / "Ableton Project Info").is_dir()
+
+    @patch("suno_to_ableton.features.export_als._get_audio_info", return_value=(480000, 48000))
+    def test_live_11_keeps_string_fileref_format(self, _mock_audio, tmp_path: Path):
+        """The Live 10 conversion must not leak into newer targets."""
+        config = SunoPrepConfig(source_dir=tmp_path, output_dir=Path("processed"), ableton_version=11)
+        result = export_als(self._stems_only_manifest(tmp_path), config)
+
+        text = _als_text(result.output_path)
+        assert "<RelativePath Value=" in text
+        assert "<RelativePathElement " not in text

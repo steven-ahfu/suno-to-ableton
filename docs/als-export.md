@@ -42,7 +42,15 @@ Tempo is written using Ableton-style fixed precision such as `144.230769` instea
 
 ## Ableton version targeting
 
-By default, exports target **Ableton Live 12**. To export for **Ableton Live 11**, use `--ableton-version 11`. Each version uses its own native template to ensure full compatibility — no XML downgrading is needed.
+By default, exports target **Ableton Live 12**. Use `--ableton-version 11` or `--ableton-version 10` to target an older version.
+
+Live 12 and Live 11 each use their own native template, so no XML downgrading is needed.
+
+Live 10 is derived from the Live 11 template, because Live 10 cannot open a Live 11 set unchanged. Targeting it applies three conversions:
+
+- The version header is rewritten to the Live 10 schema.
+- Elements introduced in Live 11 are removed: comping take lanes (`TakeLanes`/`TakeId`), linked-track groups, clip key/scale metadata, and MPE data.
+- Sample references are converted from the Live 11 string-path form back to the Live 10 element form (`HasRelativePath` / `RelativePathElement` / `Name`). The export directory is also marked as a Live project root so those project-relative paths resolve.
 
 ## Usage
 
@@ -52,10 +60,14 @@ By default, exports target **Ableton Live 12**. To export for **Ableton Live 11*
 uv run suno-to-ableton process /path/to/my-song --export-als
 ```
 
-### For Ableton 11
+### For Ableton 11 or 10
 
 ```bash
 uv run suno-to-ableton export-als /path/to/my-song --ableton-version 11
+```
+
+```bash
+uv run suno-to-ableton export-als /path/to/my-song --ableton-version 10
 ```
 
 ### From already-processed output

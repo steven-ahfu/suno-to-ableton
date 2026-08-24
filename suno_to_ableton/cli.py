@@ -125,7 +125,7 @@ def process(
         None, "--als-template", help="Path to Ableton .als template"
     ),
     ableton_version: int = typer.Option(
-        12, "--ableton-version", help="Target Ableton Live version (11 or 12)"
+        12, "--ableton-version", help="Target Ableton Live version (10, 11 or 12)"
     ),
     bpm: Optional[float] = typer.Option(
         None, "--bpm", help="Manual BPM override (bypasses detection)"
@@ -439,7 +439,7 @@ def export_als_cmd(
         None, "--als-template", help="Path to Ableton .als template"
     ),
     ableton_version: int = typer.Option(
-        12, "--ableton-version", help="Target Ableton Live version (11 or 12)"
+        12, "--ableton-version", help="Target Ableton Live version (10, 11 or 12)"
     ),
 ) -> None:
     """Generate an Ableton Live Set from processed outputs (experimental)."""
