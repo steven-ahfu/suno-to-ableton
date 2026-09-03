@@ -192,3 +192,4 @@ temp/
 projects/
 .agents/
 .omc/
+.worktrees/

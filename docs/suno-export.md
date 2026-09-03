@@ -12,7 +12,8 @@ Before using this tool, you need to export your song from Suno with stems and (o
 ```bash
 mkdir ~/suno-exports/my-song
 # Unzip the stems ZIP into this directory
-# Move the .mid file into the same directory (if available)
+# Add the .mid files too, if available — at the top level or in any
+# subfolder (e.g. midi/); MIDI is discovered recursively
 ```
 
 ## What Suno exports
@@ -44,10 +45,23 @@ my-song/
 └── Song Name.mid            # MIDI file (optional)
 ```
 
+MIDI files don't have to sit at the top level — subdirectories are scanned recursively, so a layout like this works too:
+
+```
+my-song/
+├── 0 Song Name.wav
+├── 1 Drums.wav
+└── midi/
+    ├── Song Name (Drums).mid
+    └── Song Name (Bass).mid
+```
+
+Output folders (`processed/`) and hidden directories are ignored, and a top-level MIDI file wins over a subfolder file with the same name.
+
 ### File naming details
 
 - WAV files are numbered `0`–`8` and prefixed with the stem type
 - Track 0 is always the full mix; tracks 1–8 are the individual stems
-- The MIDI file has no number prefix — it matches the song name
+- The MIDI file has no number prefix — it matches the song name, often with the stem in parentheses (e.g. `Song Name (Drums).mid`)
 - All WAVs should be 48kHz stereo float with identical frame counts (tempo-locked)
 - Not all stems may be present in every export (e.g. some songs have no sample or FX stem) — the preprocessor handles missing stems gracefully

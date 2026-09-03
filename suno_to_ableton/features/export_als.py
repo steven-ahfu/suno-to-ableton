@@ -710,81 +710,70 @@ def _select_midi_template_tracks(
     available_track_names: list[str],
 ) -> set[str]:
     """Choose which template MIDI tracks to keep for discovered MIDI files."""
-    available = [name for name in _TEMPLATE_MIDI_TRACK_NAMES if name in available_track_names]
-    if not manifest.midi_files or not available:
-        return set()
-
-    selected: list[str] = []
-    remaining = [name for name in available]
-
-    for midi_file in manifest.midi_files:
-        if (
-            len(manifest.midi_files) == 1
-            and midi_file.stem_type in (StemType.OTHER, StemType.FULL_MIX)
-            and "MIDI FX" in remaining
-        ):
-            selected.append("MIDI (Song)")
-            remaining.remove("MIDI FX")
-            continue
-        if (
-            len(manifest.midi_files) == 1
-            and midi_file.stem_type == StemType.OTHER
-            and "MIDI (Song)" in remaining
-        ):
-            selected.append("MIDI (Song)")
-            remaining.remove("MIDI (Song)")
-            continue
-        preferred = _PREFERRED_MIDI_TRACK_BY_STEM.get(
-            midi_file.stem_type, "MIDI - Lead"
-        )
-        if preferred in remaining:
-            selected.append(preferred)
-            remaining.remove(preferred)
-            continue
-        if remaining:
-            selected.append(remaining.pop(0))
-
-    return set(selected)
+    return {
+        track_name
+        for _, _, track_name in _assign_midi_template_tracks(manifest, available_track_names)
+    }
 
 
 def _assign_midi_template_tracks(
     manifest: ProcessingManifest,
     available_track_names: list[str],
 ) -> list[tuple[Path, StemType, str]]:
-    """Assign each processed MIDI file to a specific template track."""
+    """Assign each processed MIDI file to a specific template track.
+
+    Preferred lanes are reserved first so a stem with a matching template
+    lane always wins it, even when another MIDI file appears earlier in the
+    manifest; remaining files then fill leftover lanes in manifest order.
+    """
     available = [name for name in _TEMPLATE_MIDI_TRACK_NAMES if name in available_track_names]
     assignments: list[tuple[Path, StemType, str]] = []
     if not manifest.midi_files or not available:
         return assignments
 
-    remaining = [name for name in available]
-    for midi_file in manifest.midi_files:
+    if len(manifest.midi_files) == 1:
+        midi_file = manifest.midi_files[0]
         if (
-            len(manifest.midi_files) == 1
-            and midi_file.stem_type in (StemType.OTHER, StemType.FULL_MIX)
-            and "MIDI FX" in remaining
+            midi_file.stem_type in (StemType.OTHER, StemType.FULL_MIX)
+            and "MIDI FX" in available
+        ) or (
+            midi_file.stem_type == StemType.OTHER
+            and "MIDI (Song)" in available
         ):
-            track_name = "MIDI (Song)"
-            remaining.remove("MIDI FX")
-        elif (
-            len(manifest.midi_files) == 1
-            and midi_file.stem_type == StemType.OTHER
-            and "MIDI (Song)" in remaining
-        ):
-            track_name = "MIDI (Song)"
-            remaining.remove(track_name)
-        else:
-            preferred = _PREFERRED_MIDI_TRACK_BY_STEM.get(
-                midi_file.stem_type, "MIDI - Lead"
-            )
-            if preferred in remaining:
-                track_name = preferred
-                remaining.remove(track_name)
-            elif remaining:
-                track_name = remaining.pop(0)
-            else:
-                break
-        assignments.append((Path(midi_file.output_path), midi_file.stem_type, track_name))
+            return [(Path(midi_file.output_path), midi_file.stem_type, "MIDI (Song)")]
+
+    remaining = [name for name in available]
+    assigned: dict[int, str] = {}
+
+    # Pass 1: reserve preferred lanes. Exact-name stems (e.g. SYNTH ->
+    # "MIDI Synth") outrank stems routed to the same lane as a closest match
+    # (e.g. KEYBOARD -> "MIDI Synth"), regardless of manifest order.
+    def _is_exact(midi_file, preferred: str) -> bool:
+        stem_name = _STEM_TO_TRACK_NAME.get(midi_file.stem_type)
+        return stem_name is not None and preferred == f"MIDI {stem_name}"
+
+    for exact_only in (True, False):
+        for idx, midi_file in enumerate(manifest.midi_files):
+            if idx in assigned:
+                continue
+            preferred = _PREFERRED_MIDI_TRACK_BY_STEM.get(midi_file.stem_type)
+            if preferred not in remaining:
+                continue
+            if exact_only and not _is_exact(midi_file, preferred):
+                continue
+            assigned[idx] = preferred
+            remaining.remove(preferred)
+
+    # Pass 2: fill leftover lanes in manifest order.
+    for idx in range(len(manifest.midi_files)):
+        if idx in assigned or not remaining:
+            continue
+        assigned[idx] = remaining.pop(0)
+
+    for idx, midi_file in enumerate(manifest.midi_files):
+        track_name = assigned.get(idx)
+        if track_name is not None:
+            assignments.append((Path(midi_file.output_path), midi_file.stem_type, track_name))
 
     return assignments
 

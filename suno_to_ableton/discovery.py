@@ -145,6 +145,54 @@ def scan_for_projects(root: Path, max_depth: int = 5) -> list[tuple[Path, str]]:
     return results
 
 
+def _scan_midi_subdirectories(
+    source_dir: Path, inventory: ProjectInventory, max_depth: int = 3
+) -> None:
+    """Recursively pick up MIDI files stored in subdirectories.
+
+    Suno exports often arrive with MIDI in a nested folder (e.g. midi/).
+    Output and system folders are skipped, and a subdirectory file whose
+    name matches an already-discovered MIDI file is ignored so top-level
+    files win.
+    """
+    skip_names = {"processed", "__pycache__", "node_modules", ".venv", "venv"}
+    seen = {f.path.name.lower() for f in inventory.midi_files}
+
+    def _walk(directory: Path, depth: int) -> None:
+        if depth > max_depth or directory.name in skip_names or directory.name.startswith("."):
+            return
+        try:
+            entries = sorted(directory.iterdir())
+        except PermissionError:
+            return
+        for entry in entries:
+            if entry.is_dir():
+                _walk(entry, depth + 1)
+                continue
+            if not entry.is_file() or entry.suffix.lower() not in MIDI_EXTENSIONS:
+                continue
+            if entry.name.lower() in seen:
+                continue
+            seen.add(entry.name.lower())
+            inventory.midi_files.append(
+                DiscoveredFile(
+                    path=entry,
+                    role=FileRole.MIDI,
+                    stem_type=_classify_stem_name(entry.stem),
+                    stem_name=entry.stem,
+                )
+            )
+            if not inventory.song_title:
+                inventory.song_title = _sanitize_title(entry.stem)
+
+    try:
+        subdirs = sorted(e for e in source_dir.iterdir() if e.is_dir())
+    except PermissionError:
+        return
+    for subdir in subdirs:
+        _walk(subdir, 1)
+
+
 def discover_project(source_dir: Path) -> ProjectInventory:
     """Scan a directory for Suno export files and classify them."""
     source_dir = source_dir.resolve()
@@ -226,6 +274,10 @@ def discover_project(source_dir: Path) -> ProjectInventory:
             inventory.warnings.append(
                 f"Audio file without track number: {file_path.name}"
             )
+
+    # MIDI may live in a nested folder (e.g. midi/) instead of the top level
+    _scan_midi_subdirectories(source_dir, inventory)
+    inventory.midi_files.sort(key=lambda f: f.path.name.lower())
 
     # Sort stems by track number
     inventory.stems.sort(

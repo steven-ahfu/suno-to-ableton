@@ -23,12 +23,21 @@ def _remove_empty_instruments(midi: pretty_midi.PrettyMIDI) -> int:
 
 
 def _remove_short_notes(midi: pretty_midi.PrettyMIDI, min_duration_s: float) -> int:
-    """Remove notes shorter than min_duration. Returns count removed."""
+    """Remove notes shorter than min_duration. Returns count removed.
+
+    Drum instruments and trigger-style transcriptions (every note below the
+    threshold, e.g. Suno drum/FX MIDI with 1-2ms hits) are left untouched:
+    note duration carries no meaning there and filtering would wipe the part.
+    """
     removed = 0
     for inst in midi.instruments:
-        original = inst.notes[:]
-        inst.notes = [n for n in inst.notes if (n.end - n.start) >= min_duration_s]
-        removed += len(original) - len(inst.notes)
+        if inst.is_drum:
+            continue
+        kept = [n for n in inst.notes if (n.end - n.start) >= min_duration_s]
+        if not kept and inst.notes:
+            continue
+        removed += len(inst.notes) - len(kept)
+        inst.notes = kept
     return removed
 
 

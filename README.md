@@ -49,7 +49,8 @@ For the TUI, stem separation, or GPU acceleration, see **[Install — Optional e
 
 ```bash
 mkdir ~/suno-exports/my-song
-# Unzip stems ZIP and move .mid file here
+# Unzip stems ZIP here; .mid files can go at the top level
+# or in any subfolder (e.g. midi/) — MIDI is discovered recursively
 ```
 
 Expected layout:
