@@ -28,7 +28,8 @@ from ..reporting import write_json_report
 
 # Map stem types to expected template track names. Stems whose target track
 # is not in the bundled .als template are auto-cloned from "Other" (see
-# _clone_audio_track_for_missing).
+# _clone_track_for_missing). MIDI lanes are 1:1 with MIDI stems: missing
+# "MIDI <Stem>" lanes are cloned from "MIDI Synth" the same way.
 _STEM_TO_TRACK_NAME: dict[StemType, str] = {
     StemType.DRUMS: "Drums",
     StemType.PERCUSSION: "Percussion",
@@ -83,27 +84,11 @@ _TEMPLATE_MIDI_TRACK_NAMES = [
     "MIDI (Song)",
 ]
 
-_PREFERRED_MIDI_TRACK_BY_STEM: dict[StemType, str] = {
-    StemType.DRUMS: "MIDI Drums",
-    StemType.PERCUSSION: "MIDI Drums",
-    StemType.BASS: "MIDI Bass",
-    StemType.SYNTH: "MIDI Synth",
-    StemType.FX: "MIDI FX",
-    # Tonal/instrumental stems route their MIDI to the Synth slot (closest match
-    # in the bundled template). They get their own AUDIO tracks via cloning.
-    StemType.GUITAR: "MIDI Synth",
-    StemType.STRINGS: "MIDI Synth",
-    StemType.BRASS: "MIDI Synth",
-    StemType.WOODWINDS: "MIDI Synth",
-    StemType.KEYBOARD: "MIDI Synth",
-    StemType.PIANO: "MIDI Synth",
-    StemType.ORGAN: "MIDI Synth",
-    StemType.PAD: "MIDI Synth",
-    StemType.LEAD: "MIDI Synth",
-    StemType.SAMPLE: "MIDI (Song)",
-    StemType.FULL_MIX: "MIDI (Song)",
-    StemType.OTHER: "MIDI (Song)",
-}
+def _midi_lane_name(stem_type: StemType) -> str:
+    """Name of the MIDI lane a stem's MIDI file belongs on."""
+    if stem_type in (StemType.OTHER, StemType.FULL_MIX, StemType.SAMPLE):
+        return "MIDI (Song)"
+    return f"MIDI {_STEM_TO_TRACK_NAME[stem_type]}"
 
 _DEFAULT_TEMPLATE_NAMES: dict[int, str] = {
     11: "Ableton 11 Template.als",
@@ -705,76 +690,34 @@ def _build_midi_clip_from_prototype(
     return clip_el
 
 
-def _select_midi_template_tracks(
-    manifest: ProcessingManifest,
-    available_track_names: list[str],
-) -> set[str]:
-    """Choose which template MIDI tracks to keep for discovered MIDI files."""
+def _select_midi_template_tracks(manifest: ProcessingManifest) -> set[str]:
+    """Names of the MIDI lanes this export will use."""
     return {
-        track_name
-        for _, _, track_name in _assign_midi_template_tracks(manifest, available_track_names)
+        track_name for _, _, track_name in _assign_midi_template_tracks(manifest)
     }
 
 
 def _assign_midi_template_tracks(
     manifest: ProcessingManifest,
-    available_track_names: list[str],
 ) -> list[tuple[Path, StemType, str]]:
-    """Assign each processed MIDI file to a specific template track.
+    """Assign each processed MIDI file its own "MIDI <Stem>" lane.
 
-    Preferred lanes are reserved first so a stem with a matching template
-    lane always wins it, even when another MIDI file appears earlier in the
-    manifest; remaining files then fill leftover lanes in manifest order.
+    Lanes are 1:1 with MIDI stems: files whose lane exists in the template use
+    it as-is; missing lanes are cloned from the template afterwards (see
+    _clone_track_for_missing). Duplicate stem types get a numeric suffix so
+    no MIDI file is ever dropped or shuffled onto an unrelated lane.
     """
-    available = [name for name in _TEMPLATE_MIDI_TRACK_NAMES if name in available_track_names]
     assignments: list[tuple[Path, StemType, str]] = []
-    if not manifest.midi_files or not available:
-        return assignments
-
-    if len(manifest.midi_files) == 1:
-        midi_file = manifest.midi_files[0]
-        if (
-            midi_file.stem_type in (StemType.OTHER, StemType.FULL_MIX)
-            and "MIDI FX" in available
-        ) or (
-            midi_file.stem_type == StemType.OTHER
-            and "MIDI (Song)" in available
-        ):
-            return [(Path(midi_file.output_path), midi_file.stem_type, "MIDI (Song)")]
-
-    remaining = [name for name in available]
-    assigned: dict[int, str] = {}
-
-    # Pass 1: reserve preferred lanes. Exact-name stems (e.g. SYNTH ->
-    # "MIDI Synth") outrank stems routed to the same lane as a closest match
-    # (e.g. KEYBOARD -> "MIDI Synth"), regardless of manifest order.
-    def _is_exact(midi_file, preferred: str) -> bool:
-        stem_name = _STEM_TO_TRACK_NAME.get(midi_file.stem_type)
-        return stem_name is not None and preferred == f"MIDI {stem_name}"
-
-    for exact_only in (True, False):
-        for idx, midi_file in enumerate(manifest.midi_files):
-            if idx in assigned:
-                continue
-            preferred = _PREFERRED_MIDI_TRACK_BY_STEM.get(midi_file.stem_type)
-            if preferred not in remaining:
-                continue
-            if exact_only and not _is_exact(midi_file, preferred):
-                continue
-            assigned[idx] = preferred
-            remaining.remove(preferred)
-
-    # Pass 2: fill leftover lanes in manifest order.
-    for idx in range(len(manifest.midi_files)):
-        if idx in assigned or not remaining:
-            continue
-        assigned[idx] = remaining.pop(0)
-
-    for idx, midi_file in enumerate(manifest.midi_files):
-        track_name = assigned.get(idx)
-        if track_name is not None:
-            assignments.append((Path(midi_file.output_path), midi_file.stem_type, track_name))
-
+    used: set[str] = set()
+    for midi_file in manifest.midi_files:
+        base_name = _midi_lane_name(midi_file.stem_type)
+        lane_name = base_name
+        suffix = 2
+        while lane_name in used:
+            lane_name = f"{base_name} {suffix}"
+            suffix += 1
+        used.add(lane_name)
+        assignments.append((Path(midi_file.output_path), midi_file.stem_type, lane_name))
     return assignments
 
 
@@ -782,7 +725,7 @@ def _promote_fx_track_to_song_midi(
     tracks_el: ET.Element, desired_midi_tracks: set[str]
 ) -> None:
     """Reuse the FX MIDI lane as a generic song MIDI lane when needed."""
-    if "MIDI (Song)" not in desired_midi_tracks:
+    if "MIDI (Song)" not in desired_midi_tracks or "MIDI FX" in desired_midi_tracks:
         return
     if _find_track_by_name(tracks_el, "MIDI (Song)", tags=["MidiTrack"]) is not None:
         return
@@ -839,23 +782,24 @@ def _renumber_pointee_ids(element: ET.Element, offset: int) -> int:
     return max_seen
 
 
-def _clone_audio_track_for_missing(
+def _clone_track_for_missing(
     tracks_el: ET.Element,
     missing_names: list[str],
     next_pointee_id_el: ET.Element | None,
     base_track_name: str = "Other",
+    track_tag: str = "AudioTrack",
 ) -> None:
-    """Clone a base audio track for each missing stem track name.
+    """Clone a base track for each missing track name.
 
     Live requires every Pointee ID to be unique across the document. We deep-copy the
     base track, then offset all Pointee IDs in the clone so they don't collide.
     """
     if not missing_names:
         return
-    base_track = _find_track_by_name(tracks_el, base_track_name, tags=["AudioTrack"])
+    base_track = _find_track_by_name(tracks_el, base_track_name, tags=[track_tag])
     if base_track is None:
         for track in tracks_el:
-            if track.tag == "AudioTrack":
+            if track.tag == track_tag:
                 base_track = track
                 break
     if base_track is None:
@@ -878,11 +822,16 @@ def _clone_audio_track_for_missing(
         next_pointee = 100000
 
     # Live requires track order: AudioTrack* MidiTrack* ReturnTrack* MasterTrack.
-    # Insert clones before the first MidiTrack/ReturnTrack/MasterTrack so they
-    # remain grouped with the other AudioTracks.
+    # Insert clones before the first later-ordered track tag so they remain
+    # grouped with the other tracks of the same kind.
+    later_tags = (
+        ("ReturnTrack", "MasterTrack")
+        if track_tag == "MidiTrack"
+        else ("MidiTrack", "ReturnTrack", "MasterTrack")
+    )
     insert_index = len(list(tracks_el))
     for i, track in enumerate(tracks_el):
-        if track.tag in ("MidiTrack", "ReturnTrack", "MasterTrack"):
+        if track.tag in later_tags:
             insert_index = i
             break
 
@@ -998,10 +947,7 @@ def export_als(
     liveset = root.find("LiveSet")
     tracks_el = liveset.find("Tracks")
 
-    available_track_names = [
-        name for name in (_track_name(track) for track in tracks_el) if name
-    ]
-    midi_assignments = _assign_midi_template_tracks(manifest, available_track_names)
+    midi_assignments = _assign_midi_template_tracks(manifest)
 
     # Get next available ID for clip elements
     next_id_el = liveset.find("NextPointeeId")
@@ -1093,9 +1039,7 @@ def export_als(
         for track_name in [_STEM_TO_TRACK_NAME.get(processed_file.stem_type)]
         if track_name
     }
-    desired_midi_tracks = _select_midi_template_tracks(
-        manifest, available_track_names
-    )
+    desired_midi_tracks = _select_midi_template_tracks(manifest)
     _promote_fx_track_to_other(tracks_el, desired_audio_tracks)
     _promote_fx_track_to_song_midi(tracks_el, desired_midi_tracks)
     existing_audio = {
@@ -1103,11 +1047,26 @@ def export_als(
     }
     missing_audio = [n for n in desired_audio_tracks if n and n not in existing_audio]
     if missing_audio:
-        _clone_audio_track_for_missing(
+        _clone_track_for_missing(
             tracks_el,
             missing_audio,
             next_pointee_id_el=next_id_el,
             base_track_name="Other",
+        )
+    existing_midi = {
+        _track_name(t) for t in tracks_el if t.tag == "MidiTrack"
+    }
+    missing_midi: list[str] = []
+    for _, _, lane_name in midi_assignments:
+        if lane_name not in existing_midi and lane_name not in missing_midi:
+            missing_midi.append(lane_name)
+    if missing_midi:
+        _clone_track_for_missing(
+            tracks_el,
+            missing_midi,
+            next_pointee_id_el=next_id_el,
+            base_track_name="MIDI Synth",
+            track_tag="MidiTrack",
         )
     _prune_unused_template_tracks(
         tracks_el,

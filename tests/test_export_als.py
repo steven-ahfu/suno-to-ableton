@@ -115,6 +115,52 @@ class TestExportALS:
         assert "<MidiClip " in text
 
     @patch("suno_to_ableton.features.export_als._get_audio_info", return_value=(480000, 48000))
+    def test_every_midi_file_gets_its_own_matching_track(self, _mock_audio, tmp_path: Path):
+        """Each MIDI stem must land on its own "MIDI <Stem>" lane — never dropped
+        or shuffled onto an unrelated leftover lane (1:1 with the audio stems)."""
+        config = SunoPrepConfig(source_dir=tmp_path, output_dir=Path("processed"))
+        manifest = ProcessingManifest(
+            song_title="for the piss boys",
+            bpm=120.0,
+            stems=[
+                ProcessedFile(output_path=_touch(tmp_path / "processed" / "stems" / "00_vocals.wav"), stem_type=StemType.VOCALS),
+                ProcessedFile(output_path=_touch(tmp_path / "processed" / "stems" / "01_backing_vocals.wav"), stem_type=StemType.BACKING_VOCALS),
+                ProcessedFile(output_path=_touch(tmp_path / "processed" / "stems" / "02_drums.wav"), stem_type=StemType.DRUMS),
+                ProcessedFile(output_path=_touch(tmp_path / "processed" / "stems" / "03_bass.wav"), stem_type=StemType.BASS),
+                ProcessedFile(output_path=_touch(tmp_path / "processed" / "stems" / "04_keyboard.wav"), stem_type=StemType.KEYBOARD),
+                ProcessedFile(output_path=_touch(tmp_path / "processed" / "stems" / "05_synth.wav"), stem_type=StemType.SYNTH),
+                ProcessedFile(output_path=_touch(tmp_path / "processed" / "stems" / "06_other.wav"), stem_type=StemType.OTHER),
+            ],
+            midi_files=[
+                ProcessedFile(output_path=_write_midi(tmp_path / "processed" / "midi" / "backing_vocals.cleaned.mid"), stem_type=StemType.BACKING_VOCALS),
+                ProcessedFile(output_path=_write_midi(tmp_path / "processed" / "midi" / "bass.cleaned.mid"), stem_type=StemType.BASS),
+                ProcessedFile(output_path=_write_midi(tmp_path / "processed" / "midi" / "drums.cleaned.mid"), stem_type=StemType.DRUMS),
+                ProcessedFile(output_path=_write_midi(tmp_path / "processed" / "midi" / "fx.cleaned.mid"), stem_type=StemType.FX),
+                ProcessedFile(output_path=_write_midi(tmp_path / "processed" / "midi" / "keyboard.cleaned.mid"), stem_type=StemType.KEYBOARD),
+                ProcessedFile(output_path=_write_midi(tmp_path / "processed" / "midi" / "synth.cleaned.mid"), stem_type=StemType.SYNTH),
+                ProcessedFile(output_path=_write_midi(tmp_path / "processed" / "midi" / "vocals.cleaned.mid"), stem_type=StemType.VOCALS),
+            ],
+        )
+
+        result = export_als(manifest, config)
+        summary = _track_summary(result.output_path)
+
+        # One MIDI lane per MIDI file, named to match its stem.
+        assert ("MidiTrack", "MIDI Vocals") in summary
+        assert ("MidiTrack", "MIDI Backing Vocals") in summary
+        assert ("MidiTrack", "MIDI Drums") in summary
+        assert ("MidiTrack", "MIDI Bass") in summary
+        assert ("MidiTrack", "MIDI Keyboard") in summary
+        assert ("MidiTrack", "MIDI Synth") in summary
+        assert ("MidiTrack", "MIDI FX") in summary
+        assert result.midi_tracks_created == 7
+        # No MIDI file may be shuffled onto the generic song lane.
+        assert ("MidiTrack", "MIDI (Song)") not in summary
+        # Audio lanes still 1:1 with stems.
+        for audio_name in ["Vocals", "Backing Vocals", "Drums", "Bass", "Keyboard", "Synth", "Other"]:
+            assert ("AudioTrack", audio_name) in summary
+
+    @patch("suno_to_ableton.features.export_als._get_audio_info", return_value=(480000, 48000))
     def test_single_midi_project_shape_still_works(self, _mock_audio, tmp_path: Path):
         config = SunoPrepConfig(source_dir=tmp_path, output_dir=Path("processed"))
         manifest = ProcessingManifest(
