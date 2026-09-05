@@ -91,12 +91,18 @@ def _midi_lane_name(stem_type: StemType) -> str:
     return f"MIDI {_STEM_TO_TRACK_NAME[stem_type]}"
 
 _DEFAULT_TEMPLATE_NAMES: dict[int, str] = {
+    10: "Ableton 11 Template.als",
     11: "Ableton 11 Template.als",
     12: "Ableton 12 Template.als",
 }
 
 # Version attributes for downgrading to Ableton 11
 _ABLETON_VERSION_ATTRS: dict[int, dict[str, str]] = {
+    10: {
+        "MinorVersion": "10.0_377",
+        "SchemaChangeCount": "3",
+        "Creator": "Ableton Live 10.1.30",
+    },
     11: {
         "MinorVersion": "11.0_433",
         "SchemaChangeCount": "6",
@@ -115,6 +121,73 @@ _ABLETON_12_TRACK_ATTRS = [
     "SelectedTransformationName",
     "SelectedGeneratorName",
 ]
+
+# Elements introduced in Ableton 11 that Live 10 does not understand:
+# comping (TakeLanes/TakeId), linked tracks, clip scale/key metadata, MPE
+_ABLETON_11_ONLY_TAGS = {
+    "TakeLanes",
+    "TakeId",
+    "LinkedTrackGroupId",
+    "IsInKey",
+    "ScaleInformation",
+    "ViewStateExtendedClipProperties",
+    "MpeSettings",
+    "PerNoteEventStore",
+    "NoteProbabilityGroups",
+    "ProbabilityGroupIdGenerator",
+    "NoteIdGenerator",
+}
+
+# MidiNoteEvent attributes introduced in Ableton 11
+_ABLETON_11_ONLY_NOTE_ATTRS = ["Probability", "VelocityDeviation", "NoteId"]
+
+
+def _convert_fileref_to_live10(fileref: ET.Element) -> None:
+    """Rewrite a Live 11+ string-path FileRef into the legacy Live 10 element format.
+
+    Live 11 flattened FileRef to string attributes (<RelativePath Value="a/b.wav">,
+    <Path Value="/abs/a/b.wav">). Live 10 expects <HasRelativePath>, a
+    <RelativePath> containing one <RelativePathElement Dir="..."> per directory
+    (empty Dir means ".."), and the filename in a separate <Name> element.
+    """
+    rel_el = fileref.find("RelativePath")
+    if rel_el is None or rel_el.get("Value") is None:
+        return  # already legacy format
+
+    parts = rel_el.get("Value").split("/")
+    name = parts[-1] if parts else ""
+    dirs = parts[:-1]
+
+    def _value(tag: str, default: str) -> str:
+        el = fileref.find(tag)
+        return el.get("Value", default) if el is not None else default
+
+    type_val = _value("Type", "1")
+    pack_name = _value("LivePackName", "")
+    pack_id = _value("LivePackId", "")
+    size_val = _value("OriginalFileSize", "0")
+    crc_val = _value("OriginalCrc", "0")
+
+    for child in list(fileref):
+        fileref.remove(child)
+    ET.SubElement(fileref, "HasRelativePath", Value="true")
+    # RelativePathType 3 = relative to the current project folder
+    ET.SubElement(fileref, "RelativePathType", Value="3")
+    rel = ET.SubElement(fileref, "RelativePath")
+    for i, d in enumerate(dirs):
+        ET.SubElement(rel, "RelativePathElement", Id=str(i), Dir="" if d == ".." else d)
+    ET.SubElement(fileref, "Name", Value=name)
+    ET.SubElement(fileref, "Type", Value=type_val)
+    ET.SubElement(fileref, "LivePackName", Value=pack_name)
+    ET.SubElement(fileref, "LivePackId", Value=pack_id)
+    ET.SubElement(fileref, "OriginalFileSize", Value=size_val)
+    ET.SubElement(fileref, "OriginalCrc", Value=crc_val)
+    hint = ET.SubElement(fileref, "SearchHint")
+    ET.SubElement(hint, "PathHint")
+    ET.SubElement(hint, "FileSize", Value="0")
+    ET.SubElement(hint, "Crc", Value="0")
+    ET.SubElement(hint, "MaxCrcSize", Value="16384")
+    ET.SubElement(hint, "HasExtendedInfo", Value="false")
 
 _INLINE_AUDIO_CLIP_PROTOTYPE = """
 <AudioClip Id="24583" Time="0">
@@ -290,6 +363,18 @@ def _downgrade_to_ableton_version(root: ET.Element, version: int) -> None:
             for attr in _ABLETON_12_TRACK_ATTRS:
                 if attr in track.attrib:
                     del track.attrib[attr]
+    if version < 11:
+        # Strip Ableton 11-only elements and note attributes for Live 10
+        for parent in root.iter():
+            for child in list(parent):
+                if child.tag in _ABLETON_11_ONLY_TAGS:
+                    parent.remove(child)
+        for note in root.iter("MidiNoteEvent"):
+            for attr in _ABLETON_11_ONLY_NOTE_ATTRS:
+                if attr in note.attrib:
+                    del note.attrib[attr]
+        for fileref in root.iter("FileRef"):
+            _convert_fileref_to_live10(fileref)
 
 
 def _template_has_arrangement_clips(root: ET.Element) -> bool:
@@ -1110,7 +1195,13 @@ def export_als(
                 except (TypeError, ValueError):
                     pass
         next_id_el.set("Value", str(max(clip_id_counter, max_pointee) + 100))
+        # Re-run the downgrade so injected clips are also stripped of newer-version elements
+        if config.ableton_version != 12:
+            _downgrade_to_ableton_version(root, config.ableton_version)
         output_path.parent.mkdir(parents=True, exist_ok=True)
+        if config.ableton_version < 11:
+            # Mark the output dir as the Live project root for project-relative paths
+            (output_path.parent / "Ableton Project Info").mkdir(exist_ok=True)
         xml_out = ET.tostring(root, encoding="unicode", xml_declaration=False)
         xml_out = '<?xml version="1.0" encoding="UTF-8"?>\n' + xml_out
         with gzip.open(str(output_path), "wb") as f:
@@ -1118,7 +1209,7 @@ def export_als(
         return result
 
     audio_prototype = _audio_clip_prototype(root)
-    midi_prototype = _first_clip(root, ".//MidiClip")
+    midi_prototype = _first_clip(root, ".//MidiClip") if midi_assignments else None
 
     # 2. Match stems to tracks and inject AudioClips
     tracks_created = 0
@@ -1204,8 +1295,15 @@ def export_als(
                 pass
     next_id_el.set("Value", str(max(clip_id_counter, max_pointee) + 100))
 
+    # Re-run the downgrade so injected clips are also stripped of newer-version elements
+    if config.ableton_version != 12:
+        _downgrade_to_ableton_version(root, config.ableton_version)
+
     # 4. Write output
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    if config.ableton_version < 11:
+        # Mark the output dir as the Live project root for project-relative paths
+        (output_path.parent / "Ableton Project Info").mkdir(exist_ok=True)
 
     # Serialize back to XML string
     xml_out = ET.tostring(root, encoding="unicode", xml_declaration=False)

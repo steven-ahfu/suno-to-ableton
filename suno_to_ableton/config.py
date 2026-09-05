@@ -43,7 +43,7 @@ class SunoPrepConfig(BaseModel):
     apply_features: bool = False  # global --apply for advanced features
     export_als: bool = False
     als_template: Optional[Path] = None  # path to Ableton .als template
-    ableton_version: int = 12  # target Ableton Live version (11 or 12)
+    ableton_version: int = 12  # target Ableton Live version (10, 11, or 12)
     bpm_override: Optional[float] = None  # manual BPM, bypasses detection
     snap_bpm: bool = False  # round detected BPM to nearest integer
     align_downbeat: bool = True  # backward-compat: when True, apply alignment per align_mode

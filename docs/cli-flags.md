@@ -38,6 +38,6 @@ None of these run unless you explicitly pass the flag. Use them when the automat
 |------|---------|-------------|
 | `--export-als` | off | Generate Ableton Live Set from processed output |
 | `--als-template` | auto | Path to custom `.als` template (auto-detected if not set) |
-| `--ableton-version` | 12 | Target Ableton Live version (`11` or `12`) |
+| `--ableton-version` | 12 | Target Ableton Live version (`10`, `11`, or `12`) |
 
 See [ALS Export](als-export.md) for details on how the export works.
