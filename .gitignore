@@ -192,4 +192,5 @@ temp/
 projects/
 .agents/
 .omc/
-.worktrees/
+.worktrees/# Claude Code local settings
+.claude/
