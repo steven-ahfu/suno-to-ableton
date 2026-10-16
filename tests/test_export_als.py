@@ -68,6 +68,34 @@ def _write_midi(path: Path) -> Path:
 
 class TestExportALS:
     @patch("suno_to_ableton.features.export_als._get_audio_info", return_value=(480000, 48000))
+    def test_duplicate_audio_categories_keep_separate_tracks(self, _mock_audio, tmp_path: Path):
+        config = SunoPrepConfig(source_dir=tmp_path, output_dir=Path("processed"))
+        first = _touch(tmp_path / "processed" / "stems" / "02_other.wav")
+        second = _touch(tmp_path / "processed" / "stems" / "09_other.wav")
+        manifest = ProcessingManifest(
+            song_title="two other stems",
+            bpm=123.0,
+            stems=[
+                ProcessedFile(output_path=first, stem_type=StemType.OTHER),
+                ProcessedFile(output_path=second, stem_type=StemType.OTHER),
+            ],
+        )
+
+        result = export_als(manifest, config)
+        root = _als_root(result.output_path)
+        audio_tracks = [t for t in root.find("LiveSet/Tracks") if t.tag == "AudioTrack"]
+        clips_by_name = {
+            t.find("./Name/EffectiveName").get("Value"): t.findall(".//ArrangerAutomation/Events/AudioClip")
+            for t in audio_tracks
+        }
+
+        assert result.tracks_created == 2
+        assert len(clips_by_name["Other"]) == 1
+        assert len(clips_by_name["Other 2"]) == 1
+        assert "02_other.wav" in ET.tostring(clips_by_name["Other"][0], encoding="unicode")
+        assert "09_other.wav" in ET.tostring(clips_by_name["Other 2"][0], encoding="unicode")
+
+    @patch("suno_to_ableton.features.export_als._get_audio_info", return_value=(480000, 48000))
     def test_prunes_unused_audio_tracks_for_multi_midi_project(self, _mock_audio, tmp_path: Path):
         config = SunoPrepConfig(source_dir=tmp_path, output_dir=Path("processed"))
         manifest = ProcessingManifest(

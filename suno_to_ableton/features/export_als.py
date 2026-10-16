@@ -20,6 +20,7 @@ from ..config import SunoPrepConfig
 from ..models import (
     ALSExportResult,
     FeatureInvocation,
+    ProcessedFile,
     ProcessingManifest,
     StemType,
 )
@@ -498,7 +499,7 @@ def _replace_events(events_el: ET.Element, clip_el: ET.Element) -> None:
 
 def _update_reference_audio_clips(
     tracks_el: ET.Element,
-    manifest: ProcessingManifest,
+    audio_assignments: list[tuple[ProcessedFile, str]],
     output_path: Path,
     bpm: float,
     clip_id_start: int,
@@ -507,10 +508,7 @@ def _update_reference_audio_clips(
     """Replace reference audio clips with rebuilt clips for processed stems."""
     tracks_created = 0
     clip_id_counter = clip_id_start
-    for processed_file in manifest.stems:
-        track_name = _STEM_TO_TRACK_NAME.get(processed_file.stem_type)
-        if not track_name:
-            continue
+    for processed_file, track_name in audio_assignments:
         track_el = _find_track_by_name(tracks_el, track_name, tags=["AudioTrack"])
         if track_el is None:
             continue
@@ -782,6 +780,26 @@ def _select_midi_template_tracks(manifest: ProcessingManifest) -> set[str]:
     }
 
 
+def _assign_audio_template_tracks(
+    manifest: ProcessingManifest,
+) -> list[tuple[ProcessedFile, str]]:
+    """Give every processed audio stem its own lane, including repeated types."""
+    assignments: list[tuple[ProcessedFile, str]] = []
+    used: set[str] = set()
+    for processed_file in manifest.stems:
+        base_name = _STEM_TO_TRACK_NAME.get(processed_file.stem_type)
+        if not base_name:
+            continue
+        lane_name = base_name
+        suffix = 2
+        while lane_name in used:
+            lane_name = f"{base_name} {suffix}"
+            suffix += 1
+        used.add(lane_name)
+        assignments.append((processed_file, lane_name))
+    return assignments
+
+
 def _assign_midi_template_tracks(
     manifest: ProcessingManifest,
 ) -> list[tuple[Path, StemType, str]]:
@@ -1032,6 +1050,7 @@ def export_als(
     liveset = root.find("LiveSet")
     tracks_el = liveset.find("Tracks")
 
+    audio_assignments = _assign_audio_template_tracks(manifest)
     midi_assignments = _assign_midi_template_tracks(manifest)
 
     # Get next available ID for clip elements
@@ -1118,11 +1137,8 @@ def export_als(
                     flat2.set("Value", _format_ableton_float(bpm))
 
     desired_audio_tracks = {
-        track_name
-        for processed_file in manifest.stems
+        track_name for processed_file, track_name in audio_assignments
         if processed_file.output_path.exists()
-        for track_name in [_STEM_TO_TRACK_NAME.get(processed_file.stem_type)]
-        if track_name
     }
     desired_midi_tracks = _select_midi_template_tracks(manifest)
     _promote_fx_track_to_other(tracks_el, desired_audio_tracks)
@@ -1130,7 +1146,10 @@ def export_als(
     existing_audio = {
         _track_name(t) for t in tracks_el if t.tag == "AudioTrack"
     }
-    missing_audio = [n for n in desired_audio_tracks if n and n not in existing_audio]
+    missing_audio = [
+        name for processed_file, name in audio_assignments
+        if processed_file.output_path.exists() and name not in existing_audio
+    ]
     if missing_audio:
         _clone_track_for_missing(
             tracks_el,
@@ -1163,7 +1182,7 @@ def export_als(
     if _template_has_arrangement_clips(root):
         result.tracks_created = _update_reference_audio_clips(
             tracks_el=tracks_el,
-            manifest=manifest,
+            audio_assignments=audio_assignments,
             output_path=output_path,
             bpm=bpm,
             clip_id_start=clip_id_counter,
@@ -1213,14 +1232,9 @@ def export_als(
 
     # 2. Match stems to tracks and inject AudioClips
     tracks_created = 0
-    for processed_file in manifest.stems:
+    for processed_file, track_name in audio_assignments:
         stem_path = Path(processed_file.output_path)
         if not stem_path.exists():
-            continue
-
-        # Find matching track name
-        track_name = _STEM_TO_TRACK_NAME.get(processed_file.stem_type)
-        if not track_name:
             continue
 
         track_el = _find_track_by_name(tracks_el, track_name)
